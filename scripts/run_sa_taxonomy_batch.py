@@ -36,7 +36,9 @@ def load_env(path):
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, val = line.split("=", 1)
-            os.environ.setdefault(key.strip(), val.strip())
+            k, v = key.strip(), val.strip()
+            if k and (k not in os.environ or not str(os.environ.get(k, "")).strip()):
+                os.environ[k] = v
 
 
 class PlatformClient(object):

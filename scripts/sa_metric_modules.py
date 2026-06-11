@@ -20,33 +20,75 @@ def _nest(depth, body_indent="    "):
     return "\n".join(lines)
 
 
-def gen_epi_bug(route_handlers=50):
+def _flat_if_chain(prefix, count=55):
+    """Independent if branches — Radon CC > 50 per function (drives EPI FAIL via avg_ccn > 50)."""
+    lines = []
+    for i in range(count):
+        lines.append("    if value == %d:" % i)
+        lines.append("        return '%s-%d'" % (prefix, i))
+    lines.append("    return '%s-default'" % prefix)
+    return "\n".join(lines)
+
+
+def gen_metric_stub(module_key, metric_name, tool_primary):
+    """Non-target module — minimal CC stubs so tests/imports work but Radon stays low."""
+    apis = {
+        "execution_path_integrity": (
+            "def evaluate_path_integrity(value, mode, flags):\n"
+            "    return 'ok-%s' % value\n"
+            "def route_handler_1(payload):\n"
+            "    return 'ok'\n"
+        ),
+        "decision_coverage": (
+            "def aggregate_decision_coverage(cases):\n"
+            "    return 1.0\n"
+            "def decision_case_0(state, enabled, retry_count):\n"
+            "    return 'ok'\n"
+        ),
+        "condition_coverage": (
+            "def condition_check_0(a, b, c, d, flag):\n"
+            "    return 'ok'\n"
+            "def validate_all_conditions(inputs):\n"
+            "    return []\n"
+        ),
+        "logic_combinatorial": (
+            "def count_unique_paths(function_name, input_size):\n"
+            "    return 2 ** input_size\n"
+            "def combinatorial_state_machine_0(bits):\n"
+            "    return 'S0'\n"
+        ),
+        "technical_debt": (
+            "def debt_calculator_b0_v0(amount, rate, years):\n"
+            "    return float(amount)\n"
+        ),
+        "qa_prioritization": (
+            "def prioritize_test_bucket_0(modules, history):\n"
+            "    return []\n"
+        ),
+    }
+    return FUTURE + (
+        "METRIC_NAME = '%s'\n"
+        "TOOL_PRIMARY = '%s'\n\n"
+        "%s"
+    ) % (metric_name, tool_primary, apis.get(module_key, ""))
+
+
+def gen_epi_bug(route_handlers=70):
     helpers = []
     for n in range(1, route_handlers + 1):
+        body = _flat_if_chain("route-%d" % n, count=80)
         helpers.append(
             "def route_handler_%d(payload):\n"
             "    value = payload.get('value', 0)\n"
-            "    result = 'init'\n"
-            "    if value == %d:\n"
-            "        return result\n"
-            "        result = 'unreachable-%d'\n"
-            "    elif value > 9999 and value < 0:\n"
-            "        result = 'impossible-%d'\n"
-            "%s\n"
-            "    if payload.get('broken'):\n"
-            "        result = result + broken_suffix_%d\n"
-            "    return result\n"
-            % (n, n * 3, n, n, _nest(12), n)
+            "%s\n" % (n, body)
         )
     head = (
         "def evaluate_path_integrity(value, mode, flags):\n"
-        "    result = 'unknown'\n"
-        "    multiplier = flags.get('multiplier')\n"
         "%s\n"
         "    if mode == 'audit':\n"
-        "        result = result + suffix_token\n"
-        "    return result\n"
-        % _nest(14)
+        "        return suffix_token\n"
+        "    return 'done'\n"
+        % _flat_if_chain("epi", count=80)
     )
     hdr = FUTURE + "METRIC_NAME = 'Execution Path Integrity'\nTOOL_PRIMARY = 'Crosshair'\n\n"
     return hdr + head + "\n\n" + "\n\n".join(helpers)
@@ -210,28 +252,15 @@ def gen_tlcc_clean(machines=15):
     return "".join(lines)
 
 
-def gen_tdi_bug(blocks=35, variants=15):
+def gen_tdi_bug(blocks=70, variants=1):
     chunks = [FUTURE + "METRIC_NAME = 'Technical Debt Impact'\nTOOL_PRIMARY = 'Radon/Lizard'\n"]
     for block in range(blocks):
         for i in range(variants):
+            body = _flat_if_chain("debt-%d-%d" % (block, i), count=80)
             chunks.append(
-                "def debt_calculator_b%d_v%d(amount, rate, years):\n"
-                "    total = amount\n"
-                "    for year in range(years):\n"
-                "        total = total + total * rate\n"
-                "        if year %% 2 == 0:\n"
-                "            if rate > 0.5:\n"
-                "                if amount > 1000:\n"
-                "                    total = total + 5\n"
-                "                else:\n"
-                "                    total = total + 2\n"
-                "            else:\n"
-                "                total = total + 1\n"
-                "        else:\n"
-                "            total = total - 1\n"
-                "    if rate > 1:\n"
-                "        total = total * rate\n"
-                "    return total\n" % (block, i)
+                ("def debt_calculator_b%d_v%d(amount, rate, years):\n"
+                 "    value = amount + years\n"
+                 "%s\n") % (block, i, body)
             )
     return "\n\n".join(chunks)
 
@@ -287,16 +316,8 @@ def gen_qra_clean(buckets=15):
     return "".join(lines)
 
 
-def gen_bulk_minimal(prefix, count=3):
-    lines = [FUTURE + '"""Minimal shared infrastructure — low cyclomatic complexity."""\n\n']
-    for i in range(count):
-        lines.append(
-            "def %s_worker_%d(ctx):\n"
-            "    if not isinstance(ctx, dict):\n"
-            "        return 'invalid'\n"
-            "    return ctx.get('status', 'ok')\n\n" % (prefix, i)
-        )
-    return "".join(lines)
+def gen_bulk_empty(name):
+    return FUTURE + '"""%s — constants only; excluded from cyclomatic rollup."""\n\n' % name
 
 
 MODULE_BUG_CLEAN = {

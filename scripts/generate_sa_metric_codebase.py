@@ -15,7 +15,12 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
 
 import generate_sa_codebase as gen  # noqa: E402
-from sa_metric_modules import generate_module_content, gen_bulk_minimal  # noqa: E402
+from sa_metric_modules import (  # noqa: E402
+    MODULE_BUG_CLEAN,
+    gen_bulk_empty,
+    gen_metric_stub,
+    generate_module_content,
+)
 from sa_metrics import (  # noqa: E402
     ABBREV_TO_MODULE,
     BRANCH_TYPES,
@@ -201,6 +206,24 @@ def gen_tests_metric(abbrev, branch_type):
     return {}
 
 
+def gen_models_minimal():
+    return gen.FUTURE + (
+        "class AnalysisRecord(object):\n"
+        "    def __init__(self, record_id, source_path, metric_name, score, status):\n"
+        "        self.record_id = record_id\n"
+    )
+
+
+def gen_workflow_minimal():
+    return gen.FUTURE + (
+        "class StructuralAnalysisWorkflow(object):\n"
+        "    def __init__(self, repository):\n"
+        "        self.repository = repository\n"
+        "    def run_all(self, snapshot):\n"
+        "        return []\n"
+    )
+
+
 def _versions_text():
     path = os.path.join(ROOT, "versions.txt")
     if os.path.isfile(path):
@@ -214,25 +237,31 @@ def generate_metric(root, abbrev, branch_type="Bug", version="2.6"):
     _, _, classification, metric_name, _ = meta
     bname = branch_name(abbrev, branch_type, version)
 
+    module_meta = {row[0]: (row[3], row[4]) for row in SA_METRICS}
+
     def module_src(module_key):
-        return generate_module_content(module_key, module_variant(module_key, target_module, branch_type))
+        if module_key != target_module:
+            met, tool = module_meta[module_key]
+            return gen_metric_stub(module_key, met, tool)
+        return generate_module_content(
+            module_key, module_variant(module_key, target_module, branch_type))
 
     gen.ensure_dir(root)
     mapping = {
         "sa/__init__.py": gen.gen_init(),
         "sa/config.py": gen_config_metric(abbrev, branch_type, metric_name),
-        "sa/models.py": gen.gen_models("cc"),
+        "sa/models.py": gen_models_minimal(),
         "sa/execution_path_integrity.py": module_src("execution_path_integrity"),
         "sa/decision_coverage.py": module_src("decision_coverage"),
         "sa/condition_coverage.py": module_src("condition_coverage"),
         "sa/logic_combinatorial.py": module_src("logic_combinatorial"),
         "sa/technical_debt.py": module_src("technical_debt"),
         "sa/qa_prioritization.py": module_src("qa_prioritization"),
-        "sa/rules_engine.py": gen_bulk_minimal("rule", 3),
-        "sa/signal_processing.py": gen_bulk_minimal("signal", 3),
-        "sa/integration_hub.py": gen_bulk_minimal("integration", 3),
+        "sa/rules_engine.py": gen_bulk_empty("rules_engine"),
+        "sa/signal_processing.py": gen_bulk_empty("signal_processing"),
+        "sa/integration_hub.py": gen_bulk_empty("integration_hub"),
         "sa/data_repository.py": gen.gen_repository("cc"),
-        "sa/workflow_orchestrator.py": gen.gen_workflow("cc"),
+        "sa/workflow_orchestrator.py": gen_workflow_minimal(),
         "sa/reporting.py": gen.gen_reporting("cc"),
         "main.py": gen.gen_main("cc"),
         "README.md": gen_readme_metric(bname, abbrev, metric_name, classification, branch_type),

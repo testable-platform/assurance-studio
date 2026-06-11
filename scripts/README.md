@@ -4,14 +4,22 @@
 
 ```powershell
 py -3 scripts/generate_sa_codebase.py all --out build
-## Metric-level branches (SA_EPI_Bug_2.6, ...)
+## Metric-level branches (24 total: 6 metrics × Bug, BugFX, TCC, CC)
 
 ```powershell
-py -3 scripts/generate_sa_metric_codebase.py --metric all
+# Generate + create git branches (one-time)
+py -3 scripts/generate_sa_metric_codebase.py --metric all --branch-type all
 py -3 scripts/create_metric_branches.py
-git push -u origin SA_EPI_Bug_2.6 SA_DOV_Bug_2.6 SA_LSV_Bug_2.6 SA_TLCC_Bug_2.6 SA_TDI_Bug_2.6 SA_QRA_Bug_2.6
-py -3 scripts/run_sa_taxonomy_batch.py --refresh-branches --branches SA_EPI_Bug_2.6
-py -3 scripts/verify_taxonomy_html.py --dir taxonomy_reports\<batch_id>
+git push -u origin SA_EPI_Bug_2.6 SA_EPI_BugFX_2.6 ...  # all 24
+
+# Combined runner — all 24 metric branches, HTML export, verification
+py -3 scripts/run_sa_metric_taxonomy_batch.py --refresh-branches
+
+# One metric only (4 branches)
+py -3 scripts/run_sa_metric_taxonomy_batch.py --refresh-branches --metric EPI
+
+# Dry-run catalog check
+py -3 scripts/run_sa_metric_taxonomy_batch.py --dry-run --refresh-branches
 ```
 
 ## Legacy technique-level branches

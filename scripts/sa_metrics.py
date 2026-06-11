@@ -36,6 +36,10 @@ def all_bug_branches(version="2.6"):
     return all_metric_branches(version, ("Bug",))
 
 
+def all_metric_branches_csv(version="2.6", branch_types=None):
+    return ",".join(all_metric_branches(version, branch_types))
+
+
 def module_variant(module_key, target_module_key, branch_type):
     """Only the target metric module is buggy on Bug branches; all other types are clean."""
     if branch_type == "Bug" and module_key == target_module_key:

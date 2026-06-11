@@ -69,8 +69,8 @@ def parse_args():
     parser.add_argument(
         "--metric",
         choices=metric_choices,
-        default="EPI",
-        help="Run one metric (EPI, DOV, ...) or all six (default: EPI)",
+        default="DOV",
+        help="Run one metric (EPI, DOV, ...) or all six (default: DOV)",
     )
     parser.add_argument(
         "--branch-types",

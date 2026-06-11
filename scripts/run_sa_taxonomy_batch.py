@@ -127,30 +127,39 @@ def dev_verify(identity_url, email):
         pass
 
 
-def resolve_commit_sha(branch_name, branch_row, repository_match):
-    for key in ("head_commit_sha", "headCommitSha", "commit_sha", "tip_sha"):
-        val = branch_row.get(key)
-        if val:
-            return val
-    # Fallback: public GitHub API for branch tip
+def github_tip_sha(branch_name, repository_match):
     repo = repository_match.strip().strip("/")
     if repo.endswith(".git"):
         repo = repo[:-4]
     parts = repo.split("/")
-    if len(parts) >= 2:
-        owner, name = parts[-2], parts[-1]
-        api_url = "https://api.github.com/repos/%s/%s/git/ref/heads/%s" % (
-            owner, name, urllib.parse.quote(branch_name))
-        req = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github+json"})
-        try:
-            resp = urllib.request.urlopen(req, timeout=30)
-            data = json.loads(resp.read().decode("utf-8"))
-            sha = data.get("object", {}).get("sha")
-            if sha:
-                print("  resolved commit via GitHub API: %s" % sha[:12])
-                return sha
-        except Exception as exc:
-            print("  GitHub SHA lookup failed: %s" % exc)
+    if len(parts) < 2:
+        return None
+    owner, name = parts[-2], parts[-1]
+    api_url = "https://api.github.com/repos/%s/%s/git/ref/heads/%s" % (
+        owner, name, urllib.parse.quote(branch_name))
+    req = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github+json"})
+    try:
+        resp = urllib.request.urlopen(req, timeout=30)
+        data = json.loads(resp.read().decode("utf-8"))
+        return data.get("object", {}).get("sha")
+    except Exception:
+        return None
+
+
+def resolve_commit_sha(branch_name, branch_row, repository_match, prefer_github=False):
+    if prefer_github:
+        sha = github_tip_sha(branch_name, repository_match)
+        if sha:
+            print("  commit from GitHub tip: %s" % sha[:12], flush=True)
+            return sha
+    for key in ("head_commit_sha", "headCommitSha", "commit_sha", "tip_sha"):
+        val = branch_row.get(key)
+        if val:
+            return val
+    sha = github_tip_sha(branch_name, repository_match)
+    if sha:
+        print("  resolved commit via GitHub API: %s" % sha[:12], flush=True)
+        return sha
     # Fallback: local git ls-remote (works when repo is cloned and remote configured)
     try:
         proc = subprocess.Popen(
@@ -281,6 +290,15 @@ def resolve_catalog(client, project_id, repository_match):
     }
 
 
+def is_admission_delayed(exc):
+    msg = str(exc).lower()
+    return (
+        "rate_limited" in msg
+        or "quota_exceeded" in msg
+        or "admission delayed" in msg
+    )
+
+
 def create_run(client, project_id, repository_id, branch_id, commit_sha):
     body = {
         "project_id": project_id,
@@ -290,6 +308,26 @@ def create_run(client, project_id, repository_id, branch_id, commit_sha):
         "trigger_type": "manual",
     }
     return client.post_json("%s/v1/runs" % client.runtime_url, body)
+
+
+def create_run_with_retry(client, project_id, repository_id, branch_id, commit_sha,
+                          max_retries, retry_delay_sec):
+    last_exc = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            return create_run(client, project_id, repository_id, branch_id, commit_sha)
+        except Exception as exc:
+            last_exc = exc
+            if not is_admission_delayed(exc) or attempt >= max_retries:
+                raise
+            wait = retry_delay_sec * attempt
+            print(
+                "  quota/rate limit (attempt %d/%d) — waiting %ds before retry..."
+                % (attempt, max_retries, wait),
+                flush=True,
+            )
+            time.sleep(wait)
+    raise last_exc
 
 
 def get_run_summary(client, run_id, tenant_id):
@@ -493,6 +531,10 @@ def main():
     continue_on_failure = os.environ.get("CONTINUE_ON_FAILURE", "true").lower() == "true"
     require_run_completed = os.environ.get("REQUIRE_RUN_COMPLETED", "true").lower() == "true"
     taxonomy_poll_timeout = int(os.environ.get("TAXONOMY_POLL_TIMEOUT_SEC", str(poll_timeout)))
+    branch_delay_sec = int(os.environ.get("BRANCH_DELAY_SEC", "0"))
+    run_create_max_retries = int(os.environ.get("RUN_CREATE_MAX_RETRIES", "15"))
+    run_create_retry_sec = int(os.environ.get("RUN_CREATE_RETRY_SEC", "120"))
+    prefer_github_commit = os.environ.get("PREFER_GITHUB_COMMIT", "true").lower() == "true"
 
     print("=== Authenticate ===", flush=True)
     if args.skip_login:
@@ -593,7 +635,11 @@ def main():
         print("\n[%d/%d] %s" % (idx, len(branches), branch_name))
         branch = catalog["branches"][branch_name]
         branch_id = branch.get("id") or branch.get("branch_id")
-        commit_sha = resolve_commit_sha(branch_name, branch, catalog.get("repository_label"))
+        if idx > 1 and branch_delay_sec > 0:
+            print("  waiting %ds before next branch (quota spacing)..." % branch_delay_sec, flush=True)
+            time.sleep(branch_delay_sec)
+        commit_sha = resolve_commit_sha(
+            branch_name, branch, catalog.get("repository_label"), prefer_github_commit)
         if not branch_id or not commit_sha:
             print("  ERROR: branch missing id or commit sha: %s" % branch)
             if not continue_on_failure:
@@ -603,8 +649,9 @@ def main():
         started = time.time()
         try:
             print("  creating run commit=%s" % commit_sha[:12])
-            run_resp = create_run(
-                client, catalog["project_id"], catalog["repository_id"], branch_id, commit_sha)
+            run_resp = create_run_with_retry(
+                client, catalog["project_id"], catalog["repository_id"], branch_id, commit_sha,
+                run_create_max_retries, run_create_retry_sec)
             run_id = run_resp["run_id"]
             if run_resp.get("existing_run"):
                 print("  reused existing run")
@@ -640,7 +687,8 @@ def main():
     with open(manifest_path, "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
 
-    if args.export_html:
+    successful = [r for r in manifest["runs"] if r.get("run_id")]
+    if args.export_html and successful:
         if export_html_reports(output_dir):
             if args.html_only:
                 prune_to_html_only(output_dir)
@@ -650,6 +698,13 @@ def main():
     print("\n=== Done ===")
     print("Reports: %s" % output_dir)
     print("Manifest: %s" % manifest_path)
+    if not successful:
+        print("ERROR: no runs completed — QA quota may be full; retry later or ask admin", file=sys.stderr)
+        return 1
+    failed = [r for r in manifest["runs"] if r.get("error")]
+    if failed:
+        print("WARNING: %d/%d branch(es) failed (see manifest)" % (len(failed), len(branches)), file=sys.stderr)
+        return 1
     return 0
 
 

@@ -208,8 +208,20 @@ def resolve_catalog(client, project_id, repository_match):
                 project = p
                 break
         if not project:
-            raise RuntimeError("PROJECT_ID not found: %s" % project_id)
-    else:
+            print(
+                "  WARNING: PROJECT_ID %s not found — auto-selecting from catalog"
+                % project_id,
+                flush=True,
+            )
+    if not project:
+        needle = repository_match.lower()
+        for p in project_list:
+            name = (p.get("name") or "").lower()
+            slug = (p.get("slug") or "").lower()
+            if needle.split("/")[-1] in name or needle.split("/")[-1] in slug:
+                project = p
+                break
+    if not project:
         project = project_list[0]
     pid = project["id"]
     repos = client.get_json("%s/v1/projects/%s/repositories" % (client.runtime_url, pid))
@@ -283,7 +295,14 @@ def wait_for_whitebox_run(client, run_id, tenant_id, poll_interval, timeout_sec,
         if require_completed and status != "completed":
             raise RuntimeError(
                 "Whitebox run ended with status '%s' — taxonomy report not generated "
-                "(set REQUIRE_RUN_COMPLETED=false to save on failed/partial runs)" % status
+                "(set REQUIRE_RUN_COMPLETED=false to save after whitebox finishes, even if status is failed/partial)"
+                % status
+            )
+        if status in ("failed", "partial") and total > 0:
+            print(
+                "    whitebox finished (status=%s, tasks=%s/%s, tool_failures=%s) — proceeding to taxonomy"
+                % (status, done, total, failed),
+                flush=True,
             )
         return summary
 

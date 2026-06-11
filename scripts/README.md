@@ -24,4 +24,8 @@ Partial run (only branches already in catalog):
 py -3 scripts/run_sa_taxonomy_batch.py --allow-partial-branches --branches SA_bug_2.6
 ```
 
-Reports are saved under `taxonomy_reports/<batch_id>/`.
+Reports are saved under `taxonomy_reports/<batch_id>/` **only after**:
+1. The whitebox run reaches `completed` status (`REQUIRE_RUN_COMPLETED=true` by default)
+2. The taxonomy gate reports `gate_status: completed`
+
+Set `REQUIRE_RUN_COMPLETED=false` to save reports on failed/partial runs once the gate is ready.

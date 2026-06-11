@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 TERMINAL_STATUSES = frozenset(["completed", "failed", "partial", "cancelled"])
+IN_FLIGHT_STATUSES = frozenset(["pending", "queued", "running", "executing", "in_progress"])
 
 
 def load_env(path):
@@ -252,17 +253,59 @@ def create_run(client, project_id, repository_id, branch_id, commit_sha):
     return client.post_json("%s/v1/runs" % client.runtime_url, body)
 
 
-def wait_for_terminal(client, run_id, tenant_id, poll_interval, timeout_sec):
+def get_run_summary(client, run_id, tenant_id):
+    params = urllib.parse.urlencode({"tenant_id": tenant_id})
+    return client.get_json("%s/v1/runs/%s/summary?%s" % (client.views_url, run_id, params))
+
+
+def wait_for_whitebox_run(client, run_id, tenant_id, poll_interval, timeout_sec, require_completed):
+    """Poll until whitebox execution finishes. Reports require a completed run by default."""
     started = time.time()
     while True:
         if time.time() - started > timeout_sec:
-            raise RuntimeError("Timeout waiting for run %s" % run_id)
-        params = urllib.parse.urlencode({"tenant_id": tenant_id})
-        summary = client.get_json("%s/v1/runs/%s/summary?%s" % (client.views_url, run_id, params))
+            raise RuntimeError("Timeout waiting for whitebox run %s" % run_id)
+        summary = get_run_summary(client, run_id, tenant_id)
         status = (summary.get("status") or "").lower()
-        print("    poll status=%s" % status)
-        if status in TERMINAL_STATUSES:
-            return summary
+        total = summary.get("total_tasks") or 0
+        done = summary.get("completed_tasks") or 0
+        failed = summary.get("failed_tasks") or 0
+        print(
+            "    whitebox status=%s tasks=%s/%s failed=%s"
+            % (status, done, total, failed),
+            flush=True,
+        )
+        if status in IN_FLIGHT_STATUSES:
+            time.sleep(poll_interval)
+            continue
+        if status not in TERMINAL_STATUSES:
+            time.sleep(poll_interval)
+            continue
+        if require_completed and status != "completed":
+            raise RuntimeError(
+                "Whitebox run ended with status '%s' — taxonomy report not generated "
+                "(set REQUIRE_RUN_COMPLETED=false to save on failed/partial runs)" % status
+            )
+        return summary
+
+
+def fetch_taxonomy_gate(client, run_id, tenant_id):
+    params = urllib.parse.urlencode({"tenant_id": tenant_id})
+    return client.get_json(
+        "%s/v1/runs/%s/taxonomy-gate?%s" % (client.views_url, run_id, params))
+
+
+def wait_for_taxonomy_ready(client, run_id, tenant_id, poll_interval, timeout_sec):
+    """Poll taxonomy gate until gate_status is completed (matches UI export readiness)."""
+    started = time.time()
+    while True:
+        if time.time() - started > timeout_sec:
+            raise RuntimeError("Timeout waiting for taxonomy gate on run %s" % run_id)
+        taxonomy = fetch_taxonomy_gate(client, run_id, tenant_id)
+        gate_status = (taxonomy.get("gate_status") or "").lower()
+        has_types = bool(taxonomy.get("testing_types"))
+        print("    taxonomy gate_status=%s types=%s" % (gate_status, has_types), flush=True)
+        if gate_status == "completed" and has_types:
+            return taxonomy
         time.sleep(poll_interval)
 
 
@@ -270,7 +313,7 @@ def fetch_taxonomy(client, run_id, tenant_id):
     params = urllib.parse.urlencode({"tenant_id": tenant_id})
     json_url = "%s/v1/runs/%s/taxonomy-gate?%s" % (client.views_url, run_id, params)
     xml_url = "%s/v1/runs/%s/taxonomy-gate.xml?%s" % (client.views_url, run_id, params)
-    taxonomy_json = client.get_json(json_url)
+    taxonomy_json = fetch_taxonomy_gate(client, run_id, tenant_id)
     taxonomy_xml = client._request("GET", xml_url, accept="application/xml")
     return taxonomy_json, taxonomy_xml
 
@@ -338,6 +381,8 @@ def main():
     poll_interval = int(os.environ.get("POLL_INTERVAL_SEC", "30"))
     poll_timeout = int(os.environ.get("POLL_TIMEOUT_SEC", "3600"))
     continue_on_failure = os.environ.get("CONTINUE_ON_FAILURE", "true").lower() == "true"
+    require_run_completed = os.environ.get("REQUIRE_RUN_COMPLETED", "true").lower() == "true"
+    taxonomy_poll_timeout = int(os.environ.get("TAXONOMY_POLL_TIMEOUT_SEC", str(poll_timeout)))
 
     if not tenant_id:
         print("ERROR: TENANT_ID is required", file=sys.stderr)
@@ -438,10 +483,14 @@ def main():
             if run_resp.get("existing_run"):
                 print("  reused existing run")
             print("  run_id=%s" % run_id)
-            print("  waiting for terminal status...")
-            summary = wait_for_terminal(client, run_id, tenant_id, poll_interval, poll_timeout)
-            print("  fetching taxonomy gate...")
-            taxonomy_json, taxonomy_xml = fetch_taxonomy(client, run_id, tenant_id)
+            print("  waiting for whitebox run to complete...")
+            summary = wait_for_whitebox_run(
+                client, run_id, tenant_id, poll_interval, poll_timeout, require_run_completed)
+            print("  waiting for taxonomy gate to be ready...")
+            taxonomy_json = wait_for_taxonomy_ready(
+                client, run_id, tenant_id, poll_interval, taxonomy_poll_timeout)
+            print("  downloading taxonomy XML...")
+            _, taxonomy_xml = fetch_taxonomy(client, run_id, tenant_id)
             save_report(output_dir, branch_name, run_id, summary, taxonomy_json, taxonomy_xml)
             elapsed = int(time.time() - started)
             entry = {

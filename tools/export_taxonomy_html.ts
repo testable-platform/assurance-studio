@@ -2,7 +2,7 @@
  * Build the same HTML taxonomy report the Confidence Engine download button saves.
  *
  * Usage (from ai-testable-platform frontend):
- *   npx tsx --tsconfig tsconfig.json D:/Metric_evaluation/scripts/export_taxonomy_html.ts [batch_dir]
+ *   npx tsx --tsconfig tsconfig.json D:/Metric_evaluation/tools/export_taxonomy_html.ts [batch_dir]
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -10,7 +10,7 @@ import type { RunSummaryResponse, TaxonomyGateResponse } from "@/src/lib/api/typ
 import { buildTaxonomyGateHtmlReport } from "@/src/lib/confidence-engine/taxonomy-gate-html-export";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..");
-const DEFAULT_BATCH = path.join(ROOT, "taxonomy_reports", "20260611T103648Z");
+const DEFAULT_BATCH = path.join(ROOT, "taxonomy_reports", "Structural Analysis");
 const REPO_NAME = process.env.REPOSITORY_MATCH || "Mohammed-shihaf/Metric_eveluation";
 
 function readJson<T>(filePath: string): T {
@@ -35,6 +35,7 @@ function main(): void {
   let count = 0;
   for (const branchDir of branchDirs(batchDir)) {
     const branchName = path.basename(branchDir);
+    const gitBranch = branchName.replace(/_\d{8}T\d{6}Z$/, "");
     const taxonomy = readJson<TaxonomyGateResponse>(path.join(branchDir, "taxonomy-gate.json"));
     const summaryPath = path.join(branchDir, "run_summary.json");
     const summary = fs.existsSync(summaryPath)
@@ -46,7 +47,7 @@ function main(): void {
       { trustRunCompleted: true },
       {
         repo_name: REPO_NAME,
-        branch_name: summary?.branch_name ?? branchName,
+        branch_name: summary?.branch_name ?? gitBranch,
         commit_id: summary?.commit_sha ?? null,
       },
     );

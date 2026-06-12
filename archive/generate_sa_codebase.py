@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ARCHIVED: superseded by lib/sa_generator.py
 """Generate large Structural Analysis Python 2.6 codebases for SA_* branches."""
 
 from __future__ import print_function

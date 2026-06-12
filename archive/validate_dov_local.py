@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ARCHIVED: superseded by lib/sa_validate.py + notebooks/01_generate_and_validate.ipynb
 """Local Coverage.py check: DOV Bug should score low, BugFX/TCC/CC should score high."""
 
 from __future__ import print_function

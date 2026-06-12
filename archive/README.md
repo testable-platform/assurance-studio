@@ -1,3 +1,4 @@
+# ARCHIVED: superseded by README.md + notebooks/
 # Metric Evaluation Scripts
 
 ## Generate SA branch codebases
@@ -44,7 +45,9 @@ Partial run (only branches already in catalog):
 py -3 scripts/run_sa_taxonomy_batch.py --allow-partial-branches --branches SA_bug_2.6
 ```
 
-Reports are saved under `taxonomy_reports/<batch_id>/` **only after**:
+Reports are saved under `taxonomy_reports/<Testing Type>/<branch>_<UTC timestamp>/` (e.g. `Structural Analysis/SA_EPI_Bug_2.6_20260611T151913Z/`). Each run creates a new folder; previous reports are kept.
+
+Reports are written **only after**:
 1. The whitebox run reaches `completed` status (`REQUIRE_RUN_COMPLETED=true` by default)
 2. The taxonomy gate reports `gate_status: completed`
 

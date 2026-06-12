@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
-"""Create all metric-scoped SA git branches (Bug, BugFX, TCC, CC × 6 metrics)."""
+# ARCHIVED: superseded by lib/sa_generator.py + notebooks/01_generate_and_validate.ipynb
+"""Create SA_* git branches with isolated codebases."""
 
 from __future__ import print_function
 
 import os
 import shutil
 import subprocess
-import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, os.path.dirname(__file__))
-
-from sa_metrics import all_metric_branches  # noqa: E402
-
-KEEP = {".git", "build", "scripts", ".gitignore", ".env.local"}
+BRANCHES = ["SA_bug_2.6", "SA_bugFX_2.6", "SA_TCC_2.6", "SA_CC_2.6"]
+KEEP = {".git", "build", "scripts", ".gitignore"}
 
 
 def run(cmd, cwd=ROOT):
@@ -35,8 +32,6 @@ def clean_worktree():
 def deploy_branch(branch):
     clean_worktree()
     src = os.path.join(ROOT, "build", branch)
-    if not os.path.isdir(src):
-        raise RuntimeError("Missing build output: %s (run generate_sa_metric_codebase.py first)" % src)
     for item in os.listdir(src):
         s = os.path.join(src, item)
         d = os.path.join(ROOT, item)
@@ -44,21 +39,16 @@ def deploy_branch(branch):
             shutil.copytree(s, d)
         else:
             shutil.copy2(s, d)
-    add_paths = ["sa", "tests", "README.md", "main.py", "requirements.txt", "versions.txt"]
-    for optional in (".coveragerc", ".testmondata.ini", "pytest.ini", "setup.cfg"):
-        if os.path.exists(os.path.join(ROOT, optional)):
-            add_paths.append(optional)
-    run(["git", "add", "-A"] + add_paths)
-    run(["git", "commit", "-m", "Add metric-scoped SA %s Python 2.6 codebase" % branch])
+    run(["git", "add", ".gitignore", "README.md", "main.py", "requirements.txt", "versions.txt", "sa", "tests", ".coveragerc", ".testmondata.ini", "pytest.ini", "setup.cfg"])
+    run(["git", "commit", "-m", "Add Structural Analysis Python 2.6 codebase for %s" % branch])
 
 
 def main():
-    branches = all_metric_branches()
-    for branch in branches:
+    for branch in BRANCHES:
         run(["git", "checkout", "-B", branch, "main"])
         deploy_branch(branch)
     run(["git", "checkout", "main"])
-    print("Created %d branches" % len(branches))
+    print("Created branches:", ", ".join(BRANCHES))
 
 
 if __name__ == "__main__":

@@ -1,19 +1,11 @@
-#!/usr/bin/env python3
-"""
-Run SA Structural Analysis branches sequentially on Testable platform
-and collect taxonomy gate reports (JSON + XML) per branch.
-
-Usage:
-  py -3 scripts/run_sa_taxonomy_batch.py
-  py -3 scripts/run_sa_taxonomy_batch.py --dry-run
-  py -3 scripts/run_sa_taxonomy_batch.py --branches SA_bug_2.6,SA_CC_2.6
-"""
+"""Run SA branches on Testable QA and verify taxonomy HTML reports."""
 
 from __future__ import print_function
 
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -24,6 +16,24 @@ import urllib.request
 from datetime import datetime, timezone
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+from lib.sa_metrics import (  # noqa: E402
+    ABBREV_TO_CLASSIFICATION,
+    SA_METRICS,
+    SA_TESTING_TYPE,
+    branch_name_from_report_folder,
+    infer_metric_from_report_folder,
+    report_folder_name,
+    report_output_dir,
+)
+
+CLASSIFICATION_TO_ABBREV = {cls: abbrev for _, abbrev, cls, _, _ in SA_METRICS}
+ROW_RE = re.compile(
+    r'<div class="cls-name">([^<]+)</div>.*?'
+    r'<td class="result-em"><span class="rp rp-(\w+)">',
+    re.DOTALL,
+)
+
 TERMINAL_STATUSES = frozenset(["completed", "failed", "partial", "cancelled"])
 IN_FLIGHT_STATUSES = frozenset(["pending", "queued", "running", "executing", "in_progress"])
 BROWSER_USER_AGENT = (
@@ -65,7 +75,7 @@ class PlatformClient(object):
         if body is not None:
             req.data = json.dumps(body).encode("utf-8")
         try:
-            resp = urllib.request.urlopen(req, timeout=120)
+            resp = urllib.request.urlopen(req, timeout=300)
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")
             raise RuntimeError("HTTP %s %s %s" % (method, url, detail)) from e
@@ -409,7 +419,7 @@ def ensure_dir(path):
 
 def export_html_reports(batch_dir):
     """Build UI-format HTML from saved taxonomy-gate.json files."""
-    html_script = os.path.join(ROOT, "scripts", "export_taxonomy_html.ts")
+    html_script = os.path.join(ROOT, "tools", "export_taxonomy_html.ts")
     web_console = os.environ.get(
         "WEB_CONSOLE_DIR",
         os.path.join(os.path.dirname(ROOT), "ai-testable-platform", "frontend", "web-console"),
@@ -428,7 +438,7 @@ def export_html_reports(batch_dir):
         print("  WARNING: npx not found on PATH", flush=True)
         return False
     result = subprocess.run(
-        [npx, "--yes", "tsx", "--tsconfig", "tsconfig.json", html_script, batch_dir],
+        [npx, "--yes", "tsx", "--tsconfig", "tsconfig.json", html_script, os.path.abspath(batch_dir)],
         cwd=web_console,
         shell=False,
     )
@@ -453,8 +463,9 @@ def prune_to_html_only(batch_dir):
         print("  removed %d non-HTML artifact(s)" % removed, flush=True)
 
 
-def save_report(output_dir, branch_name, run_id, summary, taxonomy_json, taxonomy_xml):
-    branch_dir = os.path.join(output_dir, branch_name)
+def save_report(output_dir, branch_name, run_id, summary, taxonomy_json, taxonomy_xml, collected_at=None):
+    folder_name = report_folder_name(branch_name, collected_at)
+    branch_dir = os.path.join(output_dir, folder_name)
     ensure_dir(branch_dir)
     with open(os.path.join(branch_dir, "run_id.txt"), "w", encoding="utf-8") as fh:
         fh.write(run_id)
@@ -467,6 +478,7 @@ def save_report(output_dir, branch_name, run_id, summary, taxonomy_json, taxonom
             fh.write(taxonomy_xml)
         else:
             fh.write(str(taxonomy_xml).encode("utf-8"))
+    return folder_name
 
 
 def extract_gate_score(taxonomy_json):
@@ -511,9 +523,116 @@ def parse_args():
 
 
 def main():
-    args = parse_args()
-    load_env(args.env_file)
+    rc, _ = main_with_args(parse_args())
+    return rc
 
+
+def parse_sa_results(html):
+    sa_start = html.find("<h2>Structural Analysis</h2>")
+    if sa_start < 0:
+        return {}
+    section = html[sa_start:]
+    cyclo_start = section.find("<h3>Cyclomatic Complexity</h3>")
+    if cyclo_start < 0:
+        return {}
+    section = section[cyclo_start:]
+    next_h2 = section.find("<h2>", 1)
+    if next_h2 > 0:
+        section = section[:next_h2]
+    return {name.strip(): result.strip().lower() for name, result in ROW_RE.findall(section)}
+
+
+def infer_from_folder(path):
+    folder = os.path.basename(os.path.dirname(path))
+    abbrev, branch_type = infer_metric_from_report_folder(folder)
+    if abbrev and branch_type:
+        return abbrev, branch_type
+    base = branch_name_from_report_folder(folder)
+    parts = base.split("_")
+    if len(parts) >= 3 and parts[0] == "SA":
+        return parts[1], parts[2]
+    return None, None
+
+
+def verify_taxonomy_file(html_path, target_abbrev, branch_type):
+    with open(html_path, encoding="utf-8") as fh:
+        html = fh.read()
+    results = parse_sa_results(html)
+    if not results:
+        return False, "Structural Analysis / Cyclomatic Complexity section not found"
+    target_cls = ABBREV_TO_CLASSIFICATION[target_abbrev]
+    expect_target_fail = branch_type == "Bug"
+    lines = []
+    ok = True
+    for cls, abbrev in sorted(CLASSIFICATION_TO_ABBREV.items(), key=lambda x: x[1]):
+        result = results.get(cls, "missing")
+        is_target = abbrev == target_abbrev
+        if is_target:
+            if expect_target_fail:
+                if result != "fail":
+                    ok = False
+                    lines.append("  TARGET %s (%s): %s (expected FAIL)" % (abbrev, cls, result.upper()))
+                else:
+                    lines.append("  TARGET %s (%s): FAIL (ok)" % (abbrev, cls))
+            else:
+                if result == "fail":
+                    ok = False
+                    lines.append("  TARGET %s (%s): FAIL (expected PASS/WARN)" % (abbrev, cls))
+                else:
+                    lines.append("  TARGET %s (%s): %s (ok)" % (abbrev, cls, result.upper()))
+        else:
+            lines.append("  other  %s (%s): %s" % (abbrev, cls, result.upper()))
+    return ok, "\n".join(lines)
+
+
+def verify_taxonomy_dir(batch_dir):
+    """Verify all HTML reports under a batch directory. Returns failure count."""
+    failed = 0
+    for name in sorted(os.listdir(batch_dir)):
+        folder = os.path.join(batch_dir, name)
+        if not os.path.isdir(folder):
+            continue
+        for fn in os.listdir(folder):
+            if not fn.endswith(".html"):
+                continue
+            path = os.path.join(folder, fn)
+            abbrev, branch_type = infer_from_folder(path)
+            if not abbrev or not branch_type:
+                print("%s: cannot infer metric/type" % path)
+                failed += 1
+                continue
+            ok, detail = verify_taxonomy_file(path, abbrev, branch_type)
+            print("\n%s (target=%s, type=%s) %s" % (path, abbrev, branch_type, "PASS" if ok else "FAIL"))
+            print(detail)
+            if not ok:
+                failed += 1
+    return failed
+
+
+def run_taxonomy_batch(env_file=None, branches_csv=None, dry_run=False, refresh_branches=False,
+                       allow_partial_branches=False, export_html=True, html_only=True):
+    """Notebook-friendly wrapper. Returns (exit_code, batch_output_dir)."""
+    env_file = env_file or os.path.join(ROOT, ".env.local")
+    load_env(env_file)
+    branches = (branches_csv or os.environ.get("BRANCHES", "")).split(",")
+    branches = [b.strip() for b in branches if b.strip()]
+    args = argparse.Namespace(
+        env_file=env_file,
+        branches=",".join(branches),
+        dry_run=dry_run,
+        skip_login=False,
+        ensure_project=False,
+        refresh_branches=refresh_branches,
+        allow_partial_branches=allow_partial_branches,
+        export_html=export_html,
+        html_only=html_only,
+    )
+    return main_with_args(args)
+
+
+def main_with_args(args):
+    """Core batch logic extracted for programmatic use."""
+    load_env(args.env_file)
     identity_url = os.environ.get("IDENTITY_URL", "http://localhost:8000")
     runtime_url = os.environ.get("RUNTIME_URL", "http://localhost:8002")
     views_url = os.environ.get("VIEWS_URL", "http://localhost:8003")
@@ -541,61 +660,44 @@ def main():
         token = os.environ.get("SESSION_TOKEN")
         if not token:
             print("ERROR: SESSION_TOKEN required with --skip-login", file=sys.stderr)
-            return 1
+            return 1, None
     else:
         if not email or not password:
-            print(
-                "ERROR: AUTH_EMAIL and AUTH_PASSWORD required (copy .env.example to .env.local)",
-                file=sys.stderr,
-            )
-            return 1
+            print("ERROR: AUTH_EMAIL and AUTH_PASSWORD required", file=sys.stderr)
+            return 1, None
         if "localhost" in identity_url or "127.0.0.1" in identity_url:
             dev_verify(identity_url, email)
         token = login(identity_url, email, password)
         print("  logged in as %s" % email, flush=True)
 
     client = PlatformClient(identity_url, runtime_url, views_url, token)
-
     env_tenant_id = tenant_id
     try:
         tenant_id = resolve_tenant_id(client)
         print("  tenant_id=%s (from session)" % tenant_id, flush=True)
         if env_tenant_id and env_tenant_id != tenant_id:
-            print(
-                "  WARNING: TENANT_ID in .env.local differs from session — using session tenant",
-                flush=True,
-            )
+            print("  WARNING: TENANT_ID in .env.local differs from session", flush=True)
     except Exception as exc:
         if not tenant_id:
-            print("ERROR: could not resolve tenant — set TENANT_ID or fix login: %s" % exc,
-                  file=sys.stderr)
-            return 1
-        print("  WARNING: using TENANT_ID from env (%s): %s" % (tenant_id, exc), flush=True)
+            print("ERROR: could not resolve tenant: %s" % exc, file=sys.stderr)
+            return 1, None
+        print("  WARNING: using TENANT_ID from env: %s" % exc, flush=True)
 
     if args.ensure_project:
-        clone_url = os.environ.get(
-            "CLONE_URL", "https://github.com/%s.git" % repository_match)
-        ensure_project(
-            client,
-            os.environ.get("PROJECT_NAME", "Metric Evaluation SA"),
-            clone_url,
-            branches[0],
-        )
+        clone_url = os.environ.get("CLONE_URL", "https://github.com/%s.git" % repository_match)
+        ensure_project(client, os.environ.get("PROJECT_NAME", "Metric Evaluation SA"), clone_url, branches[0])
 
     print("\n=== Resolve catalog ===")
     catalog = resolve_catalog(client, project_id, repository_match)
-
     if args.refresh_branches:
         print("  refreshing branch catalog...")
         try:
             refresh_branches(client, catalog["repository_id"])
         except Exception as exc:
             print("  refresh trigger: %s" % exc)
-        catalog["branches"] = wait_for_branches(
-            client, catalog["repository_id"], branches)
+        catalog["branches"] = wait_for_branches(client, catalog["repository_id"], branches)
     print("  project: %s (%s)" % (catalog.get("project_name"), catalog["project_id"]))
     print("  repository: %s (%s)" % (catalog.get("repository_label"), catalog["repository_id"]))
-    print("  branches in catalog: %s" % sorted(catalog["branches"].keys()))
 
     missing = [b for b in branches if b not in catalog["branches"]]
     if missing:
@@ -603,26 +705,25 @@ def main():
             print("  WARNING: skipping missing branches: %s" % missing)
             branches = [b for b in branches if b in catalog["branches"]]
         else:
-            print(
-                "ERROR: Branches missing from catalog. Push branches, connect GitHub SCM, "
-                "then run with --refresh-branches or --allow-partial-branches. Missing: %s"
-                % missing,
-                file=sys.stderr,
-            )
-            return 1
+            print("ERROR: branches missing from catalog: %s" % missing, file=sys.stderr)
+            return 1, None
     if not branches:
-        print("ERROR: no branches available to run", file=sys.stderr)
-        return 1
-
+        print("ERROR: no branches available", file=sys.stderr)
+        return 1, None
     if args.dry_run:
-        print("\nDry run complete — catalog resolved, no runs started.")
-        return 0
+        print("\nDry run complete.")
+        classification = os.environ.get("REPORT_CLASSIFICATION", SA_TESTING_TYPE)
+        output_dir = os.path.join(ROOT, report_output_dir(
+            os.environ.get("OUTPUT_DIR", "taxonomy_reports"), classification))
+        return 0, output_dir
 
     batch_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    output_dir = os.path.join(ROOT, output_root, batch_id)
+    classification = os.environ.get("REPORT_CLASSIFICATION", SA_TESTING_TYPE)
+    output_dir = os.path.join(ROOT, report_output_dir(output_root, classification))
     ensure_dir(output_dir)
     manifest = {
         "batch_id": batch_id,
+        "classification": classification,
         "tenant_id": tenant_id,
         "repository": catalog.get("repository_label"),
         "project_id": catalog["project_id"],
@@ -636,47 +737,32 @@ def main():
         branch = catalog["branches"][branch_name]
         branch_id = branch.get("id") or branch.get("branch_id")
         if idx > 1 and branch_delay_sec > 0:
-            print("  waiting %ds before next branch (quota spacing)..." % branch_delay_sec, flush=True)
             time.sleep(branch_delay_sec)
         commit_sha = resolve_commit_sha(
             branch_name, branch, catalog.get("repository_label"), prefer_github_commit)
         if not branch_id or not commit_sha:
-            print("  ERROR: branch missing id or commit sha: %s" % branch)
             if not continue_on_failure:
-                return 1
+                return 1, output_dir
             continue
-
-        started = time.time()
         try:
-            print("  creating run commit=%s" % commit_sha[:12])
             run_resp = create_run_with_retry(
                 client, catalog["project_id"], catalog["repository_id"], branch_id, commit_sha,
                 run_create_max_retries, run_create_retry_sec)
             run_id = run_resp["run_id"]
-            if run_resp.get("existing_run"):
-                print("  reused existing run")
-            print("  run_id=%s" % run_id)
-            print("  waiting for whitebox run to complete...")
             summary = wait_for_whitebox_run(
                 client, run_id, tenant_id, poll_interval, poll_timeout, require_run_completed)
-            print("  waiting for taxonomy gate to be ready...")
             taxonomy_json = wait_for_taxonomy_ready(
                 client, run_id, tenant_id, poll_interval, taxonomy_poll_timeout)
-            print("  downloading taxonomy XML...")
             _, taxonomy_xml = fetch_taxonomy(client, run_id, tenant_id)
-            save_report(output_dir, branch_name, run_id, summary, taxonomy_json, taxonomy_xml)
-            elapsed = int(time.time() - started)
-            entry = {
+            report_folder = save_report(output_dir, branch_name, run_id, summary, taxonomy_json, taxonomy_xml)
+            manifest["runs"].append({
                 "branch": branch_name,
+                "report_folder": report_folder,
                 "run_id": run_id,
                 "status": summary.get("status"),
-                "duration_sec": elapsed,
                 "gate_score": extract_gate_score(taxonomy_json),
-                "existing_run": bool(run_resp.get("existing_run")),
-            }
-            manifest["runs"].append(entry)
-            print("  saved to %s (status=%s, gate=%s)" % (
-                os.path.join(output_dir, branch_name), entry["status"], entry["gate_score"]))
+            })
+            print("  saved to %s" % os.path.join(output_dir, report_folder))
         except Exception as exc:
             print("  FAILED: %s" % exc)
             manifest["runs"].append({"branch": branch_name, "error": str(exc)})
@@ -689,23 +775,15 @@ def main():
 
     successful = [r for r in manifest["runs"] if r.get("run_id")]
     if args.export_html and successful:
-        if export_html_reports(output_dir):
-            if args.html_only:
-                prune_to_html_only(output_dir)
-        else:
-            print("  WARNING: HTML export failed — JSON/XML kept in %s" % output_dir, flush=True)
+        if export_html_reports(output_dir) and args.html_only:
+            prune_to_html_only(output_dir)
 
     print("\n=== Done ===")
     print("Reports: %s" % output_dir)
-    print("Manifest: %s" % manifest_path)
     if not successful:
-        print("ERROR: no runs completed — QA quota may be full; retry later or ask admin", file=sys.stderr)
-        return 1
+        return 1, output_dir
     failed = [r for r in manifest["runs"] if r.get("error")]
-    if failed:
-        print("WARNING: %d/%d branch(es) failed (see manifest)" % (len(failed), len(branches)), file=sys.stderr)
-        return 1
-    return 0
+    return (1 if failed else 0), output_dir
 
 
 if __name__ == "__main__":

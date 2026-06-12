@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ARCHIVED: superseded by lib/sa_qa.py + notebooks/02_run_qa_and_verify.ipynb
 """Collect taxonomy reports from existing run IDs (no new whitebox runs)."""
 
 from __future__ import print_function

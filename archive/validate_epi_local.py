@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ARCHIVED: superseded by lib/sa_validate.py + notebooks/01_generate_and_validate.ipynb
 """Local Radon check: SA_EPI_Bug should score EPI < 14, BugFX should score >= 28."""
 
 from __future__ import print_function

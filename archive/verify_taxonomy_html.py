@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ARCHIVED: superseded by lib/sa_qa.py + notebooks/02_run_qa_and_verify.ipynb
 """Cross-verify taxonomy HTML for metric-scoped SA branches.
 
 Bug:     target classification should FAIL; others should not FAIL.
@@ -15,7 +16,12 @@ import sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from sa_metrics import ABBREV_TO_CLASSIFICATION, SA_METRICS  # noqa: E402
+from sa_metrics import (  # noqa: E402
+    ABBREV_TO_CLASSIFICATION,
+    SA_METRICS,
+    branch_name_from_report_folder,
+    infer_metric_from_report_folder,
+)
 
 CLASSIFICATION_TO_ABBREV = {cls: abbrev for _, abbrev, cls, _, _ in SA_METRICS}
 
@@ -42,7 +48,11 @@ def parse_sa_results(html):
 
 
 def infer_from_folder(path):
-    base = os.path.basename(os.path.dirname(path))
+    folder = os.path.basename(os.path.dirname(path))
+    abbrev, branch_type = infer_metric_from_report_folder(folder)
+    if abbrev and branch_type:
+        return abbrev, branch_type
+    base = branch_name_from_report_folder(folder)
     parts = base.split("_")
     if len(parts) >= 3 and parts[0] == "SA":
         return parts[1], parts[2]

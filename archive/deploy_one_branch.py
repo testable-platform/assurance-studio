@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ARCHIVED: superseded by lib/sa_generator.py + notebooks/01_generate_and_validate.ipynb
 import os
 import shutil
 import subprocess

@@ -1,0 +1,628 @@
+{
+  "taxonomy_metric": "DOV",
+  "s3_metric": "EPI",
+  "taxonomy_branches": {
+    "Bug": "SA_DOV_Bug_2.6",
+    "BugFX": "SA_DOV_BugFX_2.6",
+    "CC": "SA_DOV_CC_2.6",
+    "TCC": "SA_DOV_TCC_2.6"
+  },
+  "s3_branches": {
+    "CC": "SA_EPI_CC_2.6",
+    "BugFX": "SA_EPI_BugFX_2.6",
+    "Bug": "SA_EPI_Bug_2.6",
+    "TCC": "SA_EPI_TCC_2.6"
+  },
+  "way1_taxonomy_vs_s3": [
+    {
+      "branch_type": "Bug",
+      "taxonomy_branch": "SA_DOV_Bug_2.6",
+      "s3_branch": "SA_EPI_Bug_2.6",
+      "taxonomy_commit": "e0401dc2f0a1c79830c26b457551f94202f405cd",
+      "s3_commit": "f97f58dbd863d9b7faea3083cb60d548024ec8b3",
+      "note": "Different metric branches (DOV taxonomy vs EPI S3); compared by branch type",
+      "target_taxonomy_verify": false,
+      "metrics": [
+        {
+          "metric": "DOV",
+          "classification": "Decision Coverage",
+          "taxonomy": "pass",
+          "s3_tool": "FAIL",
+          "s3_detail": {
+            "tool": "coverage-py",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\92e14eb6-41c7-4d32-98af-6a67e89f9441\\SA_EPI_Bug_2.6\\f97f58dbd863d9b7faea3083cb60d548024ec8b3\\a747494a-a382-4982-bf19-ad9354a7d828\\coverage-py\\0\\coverage.json",
+            "covered_lines": 0,
+            "num_statements": 0,
+            "coverage_pct": 0.0
+          },
+          "aligned": false,
+          "is_target": true
+        },
+        {
+          "metric": "EPI",
+          "classification": "Static Analysis Metric",
+          "taxonomy": "pass",
+          "s3_tool": "PASS",
+          "s3_detail": {
+            "tool": "crosshair",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\92e14eb6-41c7-4d32-98af-6a67e89f9441\\SA_EPI_Bug_2.6\\f97f58dbd863d9b7faea3083cb60d548024ec8b3\\a747494a-a382-4982-bf19-ad9354a7d828\\crosshair\\0\\crosshair.json",
+            "execution_path_integrity_pct": 100.0,
+            "functions_with_counterexample": 0.0,
+            "boundary_issue_ratio": 0.0
+          },
+          "aligned": true,
+          "is_target": false
+        },
+        {
+          "metric": "LSV",
+          "classification": "Condition Coverage",
+          "taxonomy": "pass",
+          "s3_tool": "FAIL",
+          "s3_detail": {
+            "tool": "coverage-py",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\92e14eb6-41c7-4d32-98af-6a67e89f9441\\SA_EPI_Bug_2.6\\f97f58dbd863d9b7faea3083cb60d548024ec8b3\\a747494a-a382-4982-bf19-ad9354a7d828\\coverage-py\\0\\coverage.json",
+            "covered_lines": 0,
+            "num_statements": 0,
+            "coverage_pct": 0.0
+          },
+          "aligned": false,
+          "is_target": false
+        },
+        {
+          "metric": "QRA",
+          "classification": "Test Prioritization",
+          "taxonomy": "fail",
+          "s3_tool": "FAIL",
+          "s3_detail": {
+            "tool": "testmon",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\92e14eb6-41c7-4d32-98af-6a67e89f9441\\SA_EPI_Bug_2.6\\f97f58dbd863d9b7faea3083cb60d548024ec8b3\\a747494a-a382-4982-bf19-ad9354a7d828\\testmon\\0\\testmon.json",
+            "tests_total_count": 0,
+            "testmondata_present": true
+          },
+          "aligned": true,
+          "is_target": false
+        },
+        {
+          "metric": "TDI",
+          "classification": "Maintainability Analysis",
+          "taxonomy": "fail",
+          "s3_tool": "PASS",
+          "s3_detail": {
+            "tool": "lizard",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\92e14eb6-41c7-4d32-98af-6a67e89f9441\\SA_EPI_Bug_2.6\\f97f58dbd863d9b7faea3083cb60d548024ec8b3\\a747494a-a382-4982-bf19-ad9354a7d828\\lizard\\0\\lizard.json",
+            "max_complexity": 0
+          },
+          "aligned": false,
+          "is_target": false
+        },
+        {
+          "metric": "TLCC",
+          "classification": "Logic Coverage Metric",
+          "taxonomy": "pass",
+          "s3_tool": "PASS",
+          "s3_detail": {
+            "tool": "crosshair",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\92e14eb6-41c7-4d32-98af-6a67e89f9441\\SA_EPI_Bug_2.6\\f97f58dbd863d9b7faea3083cb60d548024ec8b3\\a747494a-a382-4982-bf19-ad9354a7d828\\crosshair\\0\\crosshair.json",
+            "execution_path_integrity_pct": 100.0,
+            "functions_with_counterexample": 0.0,
+            "boundary_issue_ratio": 0.0
+          },
+          "aligned": true,
+          "is_target": false
+        }
+      ],
+      "all_aligned": false,
+      "target_aligned": false
+    },
+    {
+      "branch_type": "BugFX",
+      "taxonomy_branch": "SA_DOV_BugFX_2.6",
+      "s3_branch": "SA_EPI_BugFX_2.6",
+      "taxonomy_commit": "1b3d8642dfc583eebfa84790371852355fd28f64",
+      "s3_commit": "ead6b3dc431777ea991fa749740db347099da0ae",
+      "note": "Different metric branches (DOV taxonomy vs EPI S3); compared by branch type",
+      "target_taxonomy_verify": true,
+      "metrics": [
+        {
+          "metric": "DOV",
+          "classification": "Decision Coverage",
+          "taxonomy": "pass",
+          "s3_tool": "FAIL",
+          "s3_detail": {
+            "tool": "coverage-py",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\53aee55f-0465-4613-b600-88964d11cbcb\\SA_EPI_BugFX_2.6\\ead6b3dc431777ea991fa749740db347099da0ae\\5e2467d3-c064-4325-b9cf-0573e766edf5\\coverage-py\\0\\coverage.json",
+            "covered_lines": 0,
+            "num_statements": 0,
+            "coverage_pct": 0.0
+          },
+          "aligned": false,
+          "is_target": true
+        },
+        {
+          "metric": "EPI",
+          "classification": "Static Analysis Metric",
+          "taxonomy": "pass",
+          "s3_tool": "PASS",
+          "s3_detail": {
+            "tool": "crosshair",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\53aee55f-0465-4613-b600-88964d11cbcb\\SA_EPI_BugFX_2.6\\ead6b3dc431777ea991fa749740db347099da0ae\\5e2467d3-c064-4325-b9cf-0573e766edf5\\crosshair\\0\\crosshair.json",
+            "execution_path_integrity_pct": 100.0,
+            "functions_with_counterexample": 0.0,
+            "boundary_issue_ratio": 0.0
+          },
+          "aligned": true,
+          "is_target": false
+        },
+        {
+          "metric": "LSV",
+          "classification": "Condition Coverage",
+          "taxonomy": "pass",
+          "s3_tool": "FAIL",
+          "s3_detail": {
+            "tool": "coverage-py",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\53aee55f-0465-4613-b600-88964d11cbcb\\SA_EPI_BugFX_2.6\\ead6b3dc431777ea991fa749740db347099da0ae\\5e2467d3-c064-4325-b9cf-0573e766edf5\\coverage-py\\0\\coverage.json",
+            "covered_lines": 0,
+            "num_statements": 0,
+            "coverage_pct": 0.0
+          },
+          "aligned": false,
+          "is_target": false
+        },
+        {
+          "metric": "QRA",
+          "classification": "Test Prioritization",
+          "taxonomy": "fail",
+          "s3_tool": "FAIL",
+          "s3_detail": {
+            "tool": "testmon",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\53aee55f-0465-4613-b600-88964d11cbcb\\SA_EPI_BugFX_2.6\\ead6b3dc431777ea991fa749740db347099da0ae\\5e2467d3-c064-4325-b9cf-0573e766edf5\\testmon\\0\\testmon.json",
+            "tests_total_count": 0,
+            "testmondata_present": true
+          },
+          "aligned": true,
+          "is_target": false
+        },
+        {
+          "metric": "TDI",
+          "classification": "Maintainability Analysis",
+          "taxonomy": "fail",
+          "s3_tool": "PASS",
+          "s3_detail": {
+            "tool": "lizard",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\53aee55f-0465-4613-b600-88964d11cbcb\\SA_EPI_BugFX_2.6\\ead6b3dc431777ea991fa749740db347099da0ae\\5e2467d3-c064-4325-b9cf-0573e766edf5\\lizard\\0\\lizard.json",
+            "max_complexity": 0
+          },
+          "aligned": false,
+          "is_target": false
+        },
+        {
+          "metric": "TLCC",
+          "classification": "Logic Coverage Metric",
+          "taxonomy": "pass",
+          "s3_tool": "PASS",
+          "s3_detail": {
+            "tool": "crosshair",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\53aee55f-0465-4613-b600-88964d11cbcb\\SA_EPI_BugFX_2.6\\ead6b3dc431777ea991fa749740db347099da0ae\\5e2467d3-c064-4325-b9cf-0573e766edf5\\crosshair\\0\\crosshair.json",
+            "execution_path_integrity_pct": 100.0,
+            "functions_with_counterexample": 0.0,
+            "boundary_issue_ratio": 0.0
+          },
+          "aligned": true,
+          "is_target": false
+        }
+      ],
+      "all_aligned": false,
+      "target_aligned": false
+    },
+    {
+      "branch_type": "TCC",
+      "taxonomy_branch": "SA_DOV_TCC_2.6",
+      "s3_branch": "SA_EPI_TCC_2.6",
+      "taxonomy_commit": "2e7e27363ebfe83057095b8954a9b2d06ab6f3fd",
+      "s3_commit": "9d5f13175bbefe76a7e50c0c57d35ed1639f9db0",
+      "note": "Different metric branches (DOV taxonomy vs EPI S3); compared by branch type",
+      "target_taxonomy_verify": true,
+      "metrics": [
+        {
+          "metric": "DOV",
+          "classification": "Decision Coverage",
+          "taxonomy": "pass",
+          "s3_tool": "FAIL",
+          "s3_detail": {
+            "tool": "coverage-py",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\e6dc257f-10e4-4dd6-8099-f90d33fcce6e\\SA_EPI_TCC_2.6\\9d5f13175bbefe76a7e50c0c57d35ed1639f9db0\\82f5fe2b-04c7-4c6d-80ce-f3f51efb2d7f\\coverage-py\\0\\coverage.json",
+            "covered_lines": 0,
+            "num_statements": 0,
+            "coverage_pct": 0.0
+          },
+          "aligned": false,
+          "is_target": true
+        },
+        {
+          "metric": "EPI",
+          "classification": "Static Analysis Metric",
+          "taxonomy": "pass",
+          "s3_tool": "PASS",
+          "s3_detail": {
+            "tool": "crosshair",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\e6dc257f-10e4-4dd6-8099-f90d33fcce6e\\SA_EPI_TCC_2.6\\9d5f13175bbefe76a7e50c0c57d35ed1639f9db0\\82f5fe2b-04c7-4c6d-80ce-f3f51efb2d7f\\crosshair\\0\\crosshair.json",
+            "execution_path_integrity_pct": 100.0,
+            "functions_with_counterexample": 0.0,
+            "boundary_issue_ratio": 0.0
+          },
+          "aligned": true,
+          "is_target": false
+        },
+        {
+          "metric": "LSV",
+          "classification": "Condition Coverage",
+          "taxonomy": "pass",
+          "s3_tool": "FAIL",
+          "s3_detail": {
+            "tool": "coverage-py",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\e6dc257f-10e4-4dd6-8099-f90d33fcce6e\\SA_EPI_TCC_2.6\\9d5f13175bbefe76a7e50c0c57d35ed1639f9db0\\82f5fe2b-04c7-4c6d-80ce-f3f51efb2d7f\\coverage-py\\0\\coverage.json",
+            "covered_lines": 0,
+            "num_statements": 0,
+            "coverage_pct": 0.0
+          },
+          "aligned": false,
+          "is_target": false
+        },
+        {
+          "metric": "QRA",
+          "classification": "Test Prioritization",
+          "taxonomy": "fail",
+          "s3_tool": "FAIL",
+          "s3_detail": {
+            "tool": "testmon",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\e6dc257f-10e4-4dd6-8099-f90d33fcce6e\\SA_EPI_TCC_2.6\\9d5f13175bbefe76a7e50c0c57d35ed1639f9db0\\82f5fe2b-04c7-4c6d-80ce-f3f51efb2d7f\\testmon\\0\\testmon.json",
+            "tests_total_count": 0,
+            "testmondata_present": true
+          },
+          "aligned": true,
+          "is_target": false
+        },
+        {
+          "metric": "TDI",
+          "classification": "Maintainability Analysis",
+          "taxonomy": "fail",
+          "s3_tool": "PASS",
+          "s3_detail": {
+            "tool": "lizard",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\e6dc257f-10e4-4dd6-8099-f90d33fcce6e\\SA_EPI_TCC_2.6\\9d5f13175bbefe76a7e50c0c57d35ed1639f9db0\\82f5fe2b-04c7-4c6d-80ce-f3f51efb2d7f\\lizard\\0\\lizard.json",
+            "max_complexity": 0
+          },
+          "aligned": false,
+          "is_target": false
+        },
+        {
+          "metric": "TLCC",
+          "classification": "Logic Coverage Metric",
+          "taxonomy": "pass",
+          "s3_tool": "PASS",
+          "s3_detail": {
+            "tool": "crosshair",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\e6dc257f-10e4-4dd6-8099-f90d33fcce6e\\SA_EPI_TCC_2.6\\9d5f13175bbefe76a7e50c0c57d35ed1639f9db0\\82f5fe2b-04c7-4c6d-80ce-f3f51efb2d7f\\crosshair\\0\\crosshair.json",
+            "execution_path_integrity_pct": 100.0,
+            "functions_with_counterexample": 0.0,
+            "boundary_issue_ratio": 0.0
+          },
+          "aligned": true,
+          "is_target": false
+        }
+      ],
+      "all_aligned": false,
+      "target_aligned": false
+    },
+    {
+      "branch_type": "CC",
+      "taxonomy_branch": "SA_DOV_CC_2.6",
+      "s3_branch": "SA_EPI_CC_2.6",
+      "taxonomy_commit": "6841f1e7c0d20e175bcae40d4baa4905f4f6102c",
+      "s3_commit": "686c11adc5c4c1fcb874a90182b91e2b3d27bef5",
+      "note": "Different metric branches (DOV taxonomy vs EPI S3); compared by branch type",
+      "target_taxonomy_verify": true,
+      "metrics": [
+        {
+          "metric": "DOV",
+          "classification": "Decision Coverage",
+          "taxonomy": "pass",
+          "s3_tool": "FAIL",
+          "s3_detail": {
+            "tool": "coverage-py",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\1126d1b3-9bdd-4aba-b680-a38c599c7940\\SA_EPI_CC_2.6\\686c11adc5c4c1fcb874a90182b91e2b3d27bef5\\4cf8c7a1-f871-4d0b-958e-1f1672f0e8d2\\coverage-py\\0\\coverage.json",
+            "covered_lines": 0,
+            "num_statements": 0,
+            "coverage_pct": 0.0
+          },
+          "aligned": false,
+          "is_target": true
+        },
+        {
+          "metric": "EPI",
+          "classification": "Static Analysis Metric",
+          "taxonomy": "pass",
+          "s3_tool": "PASS",
+          "s3_detail": {
+            "tool": "crosshair",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\1126d1b3-9bdd-4aba-b680-a38c599c7940\\SA_EPI_CC_2.6\\686c11adc5c4c1fcb874a90182b91e2b3d27bef5\\4cf8c7a1-f871-4d0b-958e-1f1672f0e8d2\\crosshair\\0\\crosshair.json",
+            "execution_path_integrity_pct": 100.0,
+            "functions_with_counterexample": 0.0,
+            "boundary_issue_ratio": 0.0
+          },
+          "aligned": true,
+          "is_target": false
+        },
+        {
+          "metric": "LSV",
+          "classification": "Condition Coverage",
+          "taxonomy": "pass",
+          "s3_tool": "FAIL",
+          "s3_detail": {
+            "tool": "coverage-py",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\1126d1b3-9bdd-4aba-b680-a38c599c7940\\SA_EPI_CC_2.6\\686c11adc5c4c1fcb874a90182b91e2b3d27bef5\\4cf8c7a1-f871-4d0b-958e-1f1672f0e8d2\\coverage-py\\0\\coverage.json",
+            "covered_lines": 0,
+            "num_statements": 0,
+            "coverage_pct": 0.0
+          },
+          "aligned": false,
+          "is_target": false
+        },
+        {
+          "metric": "QRA",
+          "classification": "Test Prioritization",
+          "taxonomy": "fail",
+          "s3_tool": "FAIL",
+          "s3_detail": {
+            "tool": "testmon",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\1126d1b3-9bdd-4aba-b680-a38c599c7940\\SA_EPI_CC_2.6\\686c11adc5c4c1fcb874a90182b91e2b3d27bef5\\4cf8c7a1-f871-4d0b-958e-1f1672f0e8d2\\testmon\\0\\testmon.json",
+            "tests_total_count": 0,
+            "testmondata_present": true
+          },
+          "aligned": true,
+          "is_target": false
+        },
+        {
+          "metric": "TDI",
+          "classification": "Maintainability Analysis",
+          "taxonomy": "fail",
+          "s3_tool": "PASS",
+          "s3_detail": {
+            "tool": "lizard",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\1126d1b3-9bdd-4aba-b680-a38c599c7940\\SA_EPI_CC_2.6\\686c11adc5c4c1fcb874a90182b91e2b3d27bef5\\4cf8c7a1-f871-4d0b-958e-1f1672f0e8d2\\lizard\\0\\lizard.json",
+            "max_complexity": 0
+          },
+          "aligned": false,
+          "is_target": false
+        },
+        {
+          "metric": "TLCC",
+          "classification": "Logic Coverage Metric",
+          "taxonomy": "pass",
+          "s3_tool": "PASS",
+          "s3_detail": {
+            "tool": "crosshair",
+            "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\1126d1b3-9bdd-4aba-b680-a38c599c7940\\SA_EPI_CC_2.6\\686c11adc5c4c1fcb874a90182b91e2b3d27bef5\\4cf8c7a1-f871-4d0b-958e-1f1672f0e8d2\\crosshair\\0\\crosshair.json",
+            "execution_path_integrity_pct": 100.0,
+            "functions_with_counterexample": 0.0,
+            "boundary_issue_ratio": 0.0
+          },
+          "aligned": true,
+          "is_target": false
+        }
+      ],
+      "all_aligned": false,
+      "target_aligned": false
+    }
+  ],
+  "way2_three_way": [
+    {
+      "branch_type": "Bug",
+      "dov_target": {
+        "metric": "DOV",
+        "taxonomy_branch": "SA_DOV_Bug_2.6",
+        "build_branch": "SA_DOV_Bug_2.6",
+        "taxonomy_result": "pass",
+        "s3_result": "FAIL",
+        "s3_detail": {
+          "tool": "coverage-py",
+          "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\92e14eb6-41c7-4d32-98af-6a67e89f9441\\SA_EPI_Bug_2.6\\f97f58dbd863d9b7faea3083cb60d548024ec8b3\\a747494a-a382-4982-bf19-ad9354a7d828\\coverage-py\\0\\coverage.json",
+          "covered_lines": 0,
+          "num_statements": 0,
+          "coverage_pct": 0.0
+        },
+        "build_status": "PASS",
+        "build_outcome": "FAIL",
+        "build_raw": "4.0% cov tests=1",
+        "taxonomy_vs_s3": false,
+        "taxonomy_vs_build": false,
+        "s3_vs_build": true,
+        "expected_ok_taxonomy": false,
+        "expected_ok_s3": true,
+        "expected_ok_build": true
+      },
+      "epi_cross": {
+        "metric": "EPI",
+        "s3_branch": "SA_EPI_Bug_2.6",
+        "build_branch": "SA_EPI_Bug_2.6",
+        "taxonomy_epi_row": "pass",
+        "s3_result": "PASS",
+        "s3_detail": {
+          "tool": "crosshair",
+          "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\92e14eb6-41c7-4d32-98af-6a67e89f9441\\SA_EPI_Bug_2.6\\f97f58dbd863d9b7faea3083cb60d548024ec8b3\\a747494a-a382-4982-bf19-ad9354a7d828\\crosshair\\0\\crosshair.json",
+          "execution_path_integrity_pct": 100.0,
+          "functions_with_counterexample": 0.0,
+          "boundary_issue_ratio": 0.0
+        },
+        "build_status": "SKIPPED",
+        "build_outcome": "SKIPPED",
+        "build_raw": "",
+        "taxonomy_vs_s3": true,
+        "taxonomy_vs_build": false,
+        "s3_vs_build": false,
+        "expected_ok_s3": false,
+        "expected_ok_build": false
+      },
+      "build_paths": {
+        "dov": "D:\\Metric_evaluation\\build\\SA_DOV_Bug_2.6",
+        "epi": "D:\\Metric_evaluation\\build\\SA_EPI_Bug_2.6"
+      }
+    },
+    {
+      "branch_type": "BugFX",
+      "dov_target": {
+        "metric": "DOV",
+        "taxonomy_branch": "SA_DOV_BugFX_2.6",
+        "build_branch": "SA_DOV_BugFX_2.6",
+        "taxonomy_result": "pass",
+        "s3_result": "FAIL",
+        "s3_detail": {
+          "tool": "coverage-py",
+          "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\53aee55f-0465-4613-b600-88964d11cbcb\\SA_EPI_BugFX_2.6\\ead6b3dc431777ea991fa749740db347099da0ae\\5e2467d3-c064-4325-b9cf-0573e766edf5\\coverage-py\\0\\coverage.json",
+          "covered_lines": 0,
+          "num_statements": 0,
+          "coverage_pct": 0.0
+        },
+        "build_status": "PASS",
+        "build_outcome": "PASS",
+        "build_raw": "8.0% cov tests=124",
+        "taxonomy_vs_s3": false,
+        "taxonomy_vs_build": true,
+        "s3_vs_build": false,
+        "expected_ok_taxonomy": true,
+        "expected_ok_s3": false,
+        "expected_ok_build": true
+      },
+      "epi_cross": {
+        "metric": "EPI",
+        "s3_branch": "SA_EPI_BugFX_2.6",
+        "build_branch": "SA_EPI_BugFX_2.6",
+        "taxonomy_epi_row": "pass",
+        "s3_result": "PASS",
+        "s3_detail": {
+          "tool": "crosshair",
+          "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\53aee55f-0465-4613-b600-88964d11cbcb\\SA_EPI_BugFX_2.6\\ead6b3dc431777ea991fa749740db347099da0ae\\5e2467d3-c064-4325-b9cf-0573e766edf5\\crosshair\\0\\crosshair.json",
+          "execution_path_integrity_pct": 100.0,
+          "functions_with_counterexample": 0.0,
+          "boundary_issue_ratio": 0.0
+        },
+        "build_status": "PASS",
+        "build_outcome": "PASS",
+        "build_raw": "58.0% cov tests=28 (proxy)",
+        "taxonomy_vs_s3": true,
+        "taxonomy_vs_build": true,
+        "s3_vs_build": true,
+        "expected_ok_s3": true,
+        "expected_ok_build": true
+      },
+      "build_paths": {
+        "dov": "D:\\Metric_evaluation\\build\\SA_DOV_BugFX_2.6",
+        "epi": "D:\\Metric_evaluation\\build\\SA_EPI_BugFX_2.6"
+      }
+    },
+    {
+      "branch_type": "TCC",
+      "dov_target": {
+        "metric": "DOV",
+        "taxonomy_branch": "SA_DOV_TCC_2.6",
+        "build_branch": "SA_DOV_TCC_2.6",
+        "taxonomy_result": "pass",
+        "s3_result": "FAIL",
+        "s3_detail": {
+          "tool": "coverage-py",
+          "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\e6dc257f-10e4-4dd6-8099-f90d33fcce6e\\SA_EPI_TCC_2.6\\9d5f13175bbefe76a7e50c0c57d35ed1639f9db0\\82f5fe2b-04c7-4c6d-80ce-f3f51efb2d7f\\coverage-py\\0\\coverage.json",
+          "covered_lines": 0,
+          "num_statements": 0,
+          "coverage_pct": 0.0
+        },
+        "build_status": "PASS",
+        "build_outcome": "PASS",
+        "build_raw": "7.0% cov tests=124",
+        "taxonomy_vs_s3": false,
+        "taxonomy_vs_build": true,
+        "s3_vs_build": false,
+        "expected_ok_taxonomy": true,
+        "expected_ok_s3": false,
+        "expected_ok_build": true
+      },
+      "epi_cross": {
+        "metric": "EPI",
+        "s3_branch": "SA_EPI_TCC_2.6",
+        "build_branch": "SA_EPI_TCC_2.6",
+        "taxonomy_epi_row": "pass",
+        "s3_result": "PASS",
+        "s3_detail": {
+          "tool": "crosshair",
+          "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\e6dc257f-10e4-4dd6-8099-f90d33fcce6e\\SA_EPI_TCC_2.6\\9d5f13175bbefe76a7e50c0c57d35ed1639f9db0\\82f5fe2b-04c7-4c6d-80ce-f3f51efb2d7f\\crosshair\\0\\crosshair.json",
+          "execution_path_integrity_pct": 100.0,
+          "functions_with_counterexample": 0.0,
+          "boundary_issue_ratio": 0.0
+        },
+        "build_status": "PASS",
+        "build_outcome": "PASS",
+        "build_raw": "49.0% cov tests=28 (proxy)",
+        "taxonomy_vs_s3": true,
+        "taxonomy_vs_build": true,
+        "s3_vs_build": true,
+        "expected_ok_s3": true,
+        "expected_ok_build": true
+      },
+      "build_paths": {
+        "dov": "D:\\Metric_evaluation\\build\\SA_DOV_TCC_2.6",
+        "epi": "D:\\Metric_evaluation\\build\\SA_EPI_TCC_2.6"
+      }
+    },
+    {
+      "branch_type": "CC",
+      "dov_target": {
+        "metric": "DOV",
+        "taxonomy_branch": "SA_DOV_CC_2.6",
+        "build_branch": "SA_DOV_CC_2.6",
+        "taxonomy_result": "pass",
+        "s3_result": "FAIL",
+        "s3_detail": {
+          "tool": "coverage-py",
+          "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\1126d1b3-9bdd-4aba-b680-a38c599c7940\\SA_EPI_CC_2.6\\686c11adc5c4c1fcb874a90182b91e2b3d27bef5\\4cf8c7a1-f871-4d0b-958e-1f1672f0e8d2\\coverage-py\\0\\coverage.json",
+          "covered_lines": 0,
+          "num_statements": 0,
+          "coverage_pct": 0.0
+        },
+        "build_status": "PASS",
+        "build_outcome": "PASS",
+        "build_raw": "11.0% cov tests=124",
+        "taxonomy_vs_s3": false,
+        "taxonomy_vs_build": true,
+        "s3_vs_build": false,
+        "expected_ok_taxonomy": true,
+        "expected_ok_s3": false,
+        "expected_ok_build": true
+      },
+      "epi_cross": {
+        "metric": "EPI",
+        "s3_branch": "SA_EPI_CC_2.6",
+        "build_branch": "SA_EPI_CC_2.6",
+        "taxonomy_epi_row": "pass",
+        "s3_result": "PASS",
+        "s3_detail": {
+          "tool": "crosshair",
+          "file": "D:\\Metric_evaluation\\s3_downloads\\afb346d7-6a48-4f19-bdc6-56b77367ded4\\1126d1b3-9bdd-4aba-b680-a38c599c7940\\SA_EPI_CC_2.6\\686c11adc5c4c1fcb874a90182b91e2b3d27bef5\\4cf8c7a1-f871-4d0b-958e-1f1672f0e8d2\\crosshair\\0\\crosshair.json",
+          "execution_path_integrity_pct": 100.0,
+          "functions_with_counterexample": 0.0,
+          "boundary_issue_ratio": 0.0
+        },
+        "build_status": "PASS",
+        "build_outcome": "PASS",
+        "build_raw": "60.0% cov tests=28 (proxy)",
+        "taxonomy_vs_s3": true,
+        "taxonomy_vs_build": true,
+        "s3_vs_build": true,
+        "expected_ok_s3": true,
+        "expected_ok_build": true
+      },
+      "build_paths": {
+        "dov": "D:\\Metric_evaluation\\build\\SA_DOV_CC_2.6",
+        "epi": "D:\\Metric_evaluation\\build\\SA_EPI_CC_2.6"
+      }
+    }
+  ]
+}

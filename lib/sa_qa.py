@@ -85,8 +85,37 @@ class PlatformClient(object):
             return json.loads(raw.decode("utf-8"))
         return raw
 
-    def get_json(self, url):
-        return self._request("GET", url)
+    def get_json(self, url, timeout=300, retries=3, retry_delay=15):
+        last_exc = None
+        for attempt in range(1, retries + 1):
+            try:
+                req = urllib.request.Request(url, method="GET")
+                req.add_header("Content-Type", "application/json")
+                req.add_header("User-Agent", BROWSER_USER_AGENT)
+                if self.session_token:
+                    req.add_header("Cookie", "session_token=%s" % self.session_token)
+                resp = urllib.request.urlopen(req, timeout=timeout)
+                content_type = resp.headers.get("Content-Type", "")
+                raw = resp.read()
+                if "application/json" in content_type or (raw[:1] in (b"{", b"[")):
+                    return json.loads(raw.decode("utf-8"))
+                return raw
+            except Exception as exc:
+                last_exc = exc
+                msg = str(exc).lower()
+                if attempt < retries and ("timed out" in msg or "timeout" in msg):
+                    print(
+                        "  API read timeout (attempt %d/%d), retrying in %ds..."
+                        % (attempt, retries, retry_delay),
+                        flush=True,
+                    )
+                    time.sleep(retry_delay)
+                    continue
+                if isinstance(exc, urllib.error.HTTPError):
+                    detail = exc.read().decode("utf-8", errors="replace")
+                    raise RuntimeError("HTTP GET %s %s" % (url, detail)) from exc
+                raise
+        raise last_exc
 
     def post_json(self, url, body):
         return self._request("POST", url, body=body)
@@ -445,17 +474,20 @@ def export_html_reports(batch_dir):
     return result.returncode == 0
 
 
+def _iter_run_dirs(batch_dir):
+    from lib.qa_reports import iter_run_dirs
+    for run_dir in iter_run_dirs(batch_dir):
+        yield run_dir
+
+
 def prune_to_html_only(batch_dir):
-    """Keep manifest.json and *.html per branch; remove intermediate JSON/XML."""
+    """Keep manifest.json and taxonomy-gate.html; remove JSON/XML and other intermediates."""
     removed = 0
-    for name in os.listdir(batch_dir):
-        branch_dir = os.path.join(batch_dir, name)
-        if not os.path.isdir(branch_dir):
-            continue
-        for fn in os.listdir(branch_dir):
+    for run_dir in _iter_run_dirs(batch_dir):
+        for fn in os.listdir(run_dir):
             if fn.endswith(".html"):
                 continue
-            path = os.path.join(branch_dir, fn)
+            path = os.path.join(run_dir, fn)
             if os.path.isfile(path):
                 os.remove(path)
                 removed += 1
@@ -463,22 +495,16 @@ def prune_to_html_only(batch_dir):
         print("  removed %d non-HTML artifact(s)" % removed, flush=True)
 
 
-def save_report(output_dir, branch_name, run_id, summary, taxonomy_json, taxonomy_xml, collected_at=None):
+def save_report(output_dir, branch_name, run_id, summary, taxonomy_json, collected_at=None):
+    """Write export inputs under <output>/<branch>/<branch>_<ts>/ (HTML produced later)."""
     folder_name = report_folder_name(branch_name, collected_at)
-    branch_dir = os.path.join(output_dir, folder_name)
+    branch_dir = os.path.join(output_dir, branch_name, folder_name)
     ensure_dir(branch_dir)
-    with open(os.path.join(branch_dir, "run_id.txt"), "w", encoding="utf-8") as fh:
-        fh.write(run_id)
     with open(os.path.join(branch_dir, "run_summary.json"), "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2)
     with open(os.path.join(branch_dir, "taxonomy-gate.json"), "w", encoding="utf-8") as fh:
         json.dump(taxonomy_json, fh, indent=2)
-    with open(os.path.join(branch_dir, "taxonomy-gate.xml"), "wb") as fh:
-        if isinstance(taxonomy_xml, bytes):
-            fh.write(taxonomy_xml)
-        else:
-            fh.write(str(taxonomy_xml).encode("utf-8"))
-    return folder_name
+    return os.path.join(branch_name, folder_name)
 
 
 def extract_gate_score(taxonomy_json):
@@ -516,14 +542,22 @@ def parse_args():
     parser.add_argument(
         "--html-only",
         action="store_true",
-        default=os.environ.get("HTML_ONLY", "false").lower() == "true",
-        help="After HTML export, delete JSON/XML/run_id files (keep .html + manifest)",
+        default=os.environ.get("HTML_ONLY", "true").lower() == "true",
+        help="Keep only taxonomy-gate.html per run (default: true / HTML_ONLY env)",
+    )
+    parser.add_argument(
+        "--keep-artifacts",
+        action="store_true",
+        help="Retain taxonomy-gate.json and other intermediates after HTML export",
     )
     return parser.parse_args()
 
 
 def main():
-    rc, _ = main_with_args(parse_args())
+    args = parse_args()
+    if getattr(args, "keep_artifacts", False):
+        args.html_only = False
+    rc, _ = main_with_args(args)
     return rc
 
 
@@ -585,27 +619,28 @@ def verify_taxonomy_file(html_path, target_abbrev, branch_type):
     return ok, "\n".join(lines)
 
 
+def iter_taxonomy_html_paths(batch_dir):
+    """Yield taxonomy-gate.html files under nested branch/run folders."""
+    for run_dir in sorted(_iter_run_dirs(batch_dir)):
+        for fn in os.listdir(run_dir):
+            if fn.endswith(".html"):
+                yield os.path.join(run_dir, fn)
+
+
 def verify_taxonomy_dir(batch_dir):
     """Verify all HTML reports under a batch directory. Returns failure count."""
     failed = 0
-    for name in sorted(os.listdir(batch_dir)):
-        folder = os.path.join(batch_dir, name)
-        if not os.path.isdir(folder):
+    for path in iter_taxonomy_html_paths(batch_dir):
+        abbrev, branch_type = infer_from_folder(path)
+        if not abbrev or not branch_type:
+            print("%s: cannot infer metric/type" % path)
+            failed += 1
             continue
-        for fn in os.listdir(folder):
-            if not fn.endswith(".html"):
-                continue
-            path = os.path.join(folder, fn)
-            abbrev, branch_type = infer_from_folder(path)
-            if not abbrev or not branch_type:
-                print("%s: cannot infer metric/type" % path)
-                failed += 1
-                continue
-            ok, detail = verify_taxonomy_file(path, abbrev, branch_type)
-            print("\n%s (target=%s, type=%s) %s" % (path, abbrev, branch_type, "PASS" if ok else "FAIL"))
-            print(detail)
-            if not ok:
-                failed += 1
+        ok, detail = verify_taxonomy_file(path, abbrev, branch_type)
+        print("\n%s (target=%s, type=%s) %s" % (path, abbrev, branch_type, "PASS" if ok else "FAIL"))
+        print(detail)
+        if not ok:
+            failed += 1
     return failed
 
 
@@ -753,16 +788,45 @@ def main_with_args(args):
                 client, run_id, tenant_id, poll_interval, poll_timeout, require_run_completed)
             taxonomy_json = wait_for_taxonomy_ready(
                 client, run_id, tenant_id, poll_interval, taxonomy_poll_timeout)
-            _, taxonomy_xml = fetch_taxonomy(client, run_id, tenant_id)
-            report_folder = save_report(output_dir, branch_name, run_id, summary, taxonomy_json, taxonomy_xml)
-            manifest["runs"].append({
+            report_folder = save_report(output_dir, branch_name, run_id, summary, taxonomy_json)
+            run_entry = {
                 "branch": branch_name,
                 "report_folder": report_folder,
                 "run_id": run_id,
+                "commit_sha": commit_sha,
                 "status": summary.get("status"),
                 "gate_score": extract_gate_score(taxonomy_json),
-            })
-            print("  saved to %s" % os.path.join(output_dir, report_folder))
+            }
+            manifest["runs"].append(run_entry)
+            print("  saved to %s" % os.path.join(output_dir, report_folder.replace("\\", "/")))
+
+            if os.environ.get("SYNC_S3_AFTER_TAXONOMY", "true").lower() == "true":
+                try:
+                    from lib.s3_sync import sync_run, update_manifest
+                    html_path = os.path.join(output_dir, report_folder, "taxonomy-gate.html")
+                    sync_result = sync_run(
+                        branch=branch_name,
+                        commit_sha=commit_sha,
+                        run_id=run_id,
+                        taxonomy_html_path=html_path if os.path.isfile(html_path) else "",
+                    )
+                    run_entry["s3_sync"] = {
+                        "status": sync_result.get("status"),
+                        "local_path": sync_result.get("local_path"),
+                        "coverage_status": sync_result.get("coverage_status"),
+                        "coverage": sync_result.get("coverage"),
+                    }
+                    print("  S3 sync: %s" % sync_result.get("status"), flush=True)
+                    if sync_result.get("coverage"):
+                        cov = sync_result["coverage"]
+                        print(
+                            "    coverage-py statements=%s covered=%s"
+                            % (cov.get("num_statements"), cov.get("covered_lines")),
+                            flush=True,
+                        )
+                except Exception as sync_exc:
+                    print("  WARNING: S3 sync failed: %s" % sync_exc, flush=True)
+                    run_entry["s3_sync"] = {"status": "ERROR", "error": str(sync_exc)}
         except Exception as exc:
             print("  FAILED: %s" % exc)
             manifest["runs"].append({"branch": branch_name, "error": str(exc)})
@@ -775,8 +839,23 @@ def main_with_args(args):
 
     successful = [r for r in manifest["runs"] if r.get("run_id")]
     if args.export_html and successful:
-        if export_html_reports(output_dir) and args.html_only:
+        exported = export_html_reports(output_dir)
+        from lib.qa_reports import normalize_taxonomy_html
+
+        for run_dir in _iter_run_dirs(output_dir):
+            normalize_taxonomy_html(run_dir)
+        if args.html_only:
             prune_to_html_only(output_dir)
+        elif not exported:
+            print("  WARNING: HTML export failed", flush=True)
+
+        if os.environ.get("SYNC_S3_AFTER_TAXONOMY", "true").lower() == "true":
+            try:
+                from lib.s3_sync import backfill_missing
+                print("\n=== S3 backfill after HTML export ===", flush=True)
+                backfill_missing(output_dir)
+            except Exception as exc:
+                print("  WARNING: S3 backfill failed: %s" % exc, flush=True)
 
     print("\n=== Done ===")
     print("Reports: %s" % output_dir)

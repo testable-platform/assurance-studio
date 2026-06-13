@@ -18,11 +18,18 @@ function readJson<T>(filePath: string): T {
 }
 
 function branchDirs(batchDir: string): string[] {
-  return fs
-    .readdirSync(batchDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => path.join(batchDir, d.name))
-    .filter((dir) => fs.existsSync(path.join(dir, "taxonomy-gate.json")));
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    if (!fs.existsSync(path.join(dir, "taxonomy-gate.json"))) {
+      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (ent.isDirectory()) walk(path.join(dir, ent.name));
+      }
+      return;
+    }
+    out.push(dir);
+  };
+  walk(batchDir);
+  return out;
 }
 
 function main(): void {
@@ -52,10 +59,10 @@ function main(): void {
       },
     );
 
-    const outName = `taxonomy-gate-${taxonomy.run_id}.html`;
+    const outName = "taxonomy-gate.html";
     const outPath = path.join(branchDir, outName);
     fs.writeFileSync(outPath, html, "utf-8");
-    console.log("  %s -> %s" , branchName, outName);
+    console.log("  %s -> %s", branchDir.replace(batchDir + path.sep, ""), outName);
     count += 1;
   }
 

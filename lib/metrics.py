@@ -75,11 +75,31 @@ def report_folder_name(branch_name, collected_at=None):
     return "%s_%s" % (branch_name, ts)
 
 
-def report_file_path(group_label, branch_name, collected_at=None):
-    """taxonomy_reports/<L2>/<BRANCH>/<BRANCH>_<YYYYMMDD_HHMMSS>.html"""
-    ts = collected_at or report_timestamp_notebook()
-    folder = os.path.join(report_output_dir(group_label=group_label), branch_name)
-    return os.path.join(folder, "%s_%s.html" % (branch_name, ts))
+def report_run_dir(group_label, branch_name, collected_at=None, output_root=None):
+    """taxonomy_reports/<L2>/<BRANCH>/<BRANCH>_<YYYYMMDDTHHMMSSZ>/"""
+    ts = collected_at or report_timestamp()
+    return os.path.join(
+        report_output_dir(output_root, group_label),
+        branch_name,
+        "%s_%s" % (branch_name, ts),
+    )
+
+
+def report_html_filename():
+    return "taxonomy-gate.html"
+
+
+def report_html_path(group_label, branch_name, collected_at=None, output_root=None):
+    """taxonomy_reports/<L2>/<BRANCH>/<BRANCH>_<ts>/taxonomy-gate.html"""
+    return os.path.join(
+        report_run_dir(group_label, branch_name, collected_at, output_root),
+        report_html_filename(),
+    )
+
+
+def report_file_path(group_label, branch_name, collected_at=None, output_root=None):
+    """Alias for the canonical taxonomy HTML path."""
+    return report_html_path(group_label, branch_name, collected_at, output_root)
 
 
 def branch_name_from_report_folder(folder_name):

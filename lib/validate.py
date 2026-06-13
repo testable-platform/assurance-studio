@@ -155,13 +155,11 @@ def validate_branch(root, technique_code=None, metric_code=None, branch_type=Non
     version = parsed["version"] if version == "2.6" else sanitize_version(version)
 
     if technique_code == "SA" and language == "python":
-        fn = SA_TYPE_ASSERTERS.get(branch_type)
-        if fn:
-            try:
-                fn(root, metric_code, version, language)
-            except AssertionError as exc:
-                raise BranchValidationError("%s: %s" % (folder, exc)) from exc
-            return folder, branch_type, _count_loc(root, "sa")
+        try:
+            loc = _assert_generic(root, technique_code, metric_code, branch_type, version, language)
+        except AssertionError as exc:
+            raise BranchValidationError("%s: %s" % (folder, exc)) from exc
+        return folder, branch_type, loc
 
     try:
         loc = _assert_generic(root, technique_code, metric_code, branch_type, version, language)

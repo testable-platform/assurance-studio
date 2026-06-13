@@ -1,5 +1,6 @@
-version: '3.0'
-source: Book.xlsx
+version: '3.1'
+source: Testable_Strategy_Metrics_Mapping_v0.2 (3).xlsx
+branch_naming: v2
 branch_types:
 - Bug
 - BugFX
@@ -13,6 +14,7 @@ techniques:
   metrics:
   - metric_code: EPI
     module_key: execution_path_integrity
+    branch_slug: Execution-Path-Integrity
     l4_classification: Static Analysis Metric
     l5_metric: Execution Path Integrity
     taxonomy_classification: Static Analysis Metric
@@ -20,27 +22,17 @@ techniques:
       python:
         primary: Crosshair
         secondary: Mccabe
-      c:
-        primary: lizard
-        secondary: cyclomatic
-      cpp:
-        primary: Lizard
-        secondary: cyclomatic
-      java:
-        primary: CK
-        secondary: Pmd
-      csharp:
-        primary: lizard
-        secondary: csharp cyclomatic
-      javascript:
-        primary: Lizard
-        secondary: Plato
-      typescript:
-        primary: Lizard
-        secondary: Plato
+    emitted_directly: false
+    derivation: "execution_path_integrity = (\n    functions_without_counterexample\
+      \ / max(total_functions_checked, 1)\n)"
+    raw_formula: CC = E – N + 2P  (E=edges, N=nodes, P=connected components)
+    expected_threshold: <= 10 per function (lower is better)
+    normalisation: MAX(0, 100 – ((CC–1)/9 × 100))  capped 0–100
+    execution_frequency: Every Commit / PR
     source_row: 6
   - metric_code: DOV
-    module_key: decision_coverage
+    module_key: decision_outcome_verification
+    branch_slug: Decision-Outcome-Verification
     l4_classification: Decision Coverage
     l5_metric: Decision Outcome Verification
     taxonomy_classification: Decision Coverage
@@ -48,27 +40,16 @@ techniques:
       python:
         primary: Coverage.py
         secondary: Mccabe
-      c:
-        primary: lizard
-        secondary: cyclomatic
-      cpp:
-        primary: Lizard
-        secondary: cyclomatic
-      java:
-        primary: CK
-        secondary: Pmd
-      csharp:
-        primary: lizard
-        secondary: csharp cyclomatic
-      javascript:
-        primary: Lizard
-        secondary: Plato
-      typescript:
-        primary: Lizard
-        secondary: Plato
+    emitted_directly: false
+    derivation: decision_coverage = covered_branches / max(num_branches, 1)
+    raw_formula: Health Score = (Modules with MI >= 65 / Total Modules) × 100
+    expected_threshold: '>= 80% of modules in green zone (MI >= 65)'
+    normalisation: Score = Health Score % [gate at 80%]
+    execution_frequency: Every Commit / PR
     source_row: 7
   - metric_code: LSV
-    module_key: condition_coverage
+    module_key: logical_sub_expression_validation
+    branch_slug: Logical-Sub-Expression-Validation
     l4_classification: Condition Coverage
     l5_metric: Logical Sub-expression Validation
     taxonomy_classification: Condition Coverage
@@ -76,27 +57,18 @@ techniques:
       python:
         primary: Pymcdc
         secondary: Mccabe
-      c:
-        primary: lizard
-        secondary: cyclomatic
-      cpp:
-        primary: Lizard
-        secondary: cyclomatic
-      java:
-        primary: CK
-        secondary: Pmd
-      csharp:
-        primary: lizard
-        secondary: csharp cyclomatic
-      javascript:
-        primary: Lizard
-        secondary: Plato
-      typescript:
-        primary: Lizard
-        secondary: Plato
+    emitted_directly: false
+    derivation: condition_coverage = covered_mcdc_conditions / max(total_mcdc_conditions,
+      1)
+    raw_formula: Refactor ROI Score = Count(Modules with MI < 40) × 20 + Count(Modules
+      with MI 40–64) × 5
+    expected_threshold: 0 modules in red zone (MI < 40); < 10 in yellow zone
+    normalisation: MAX(0, 100 – Refactor_ROI_Score)
+    execution_frequency: Every Commit / PR
     source_row: 8
   - metric_code: TLCC
-    module_key: logic_combinatorial
+    module_key: total_logical_combinatorial_coverage
+    branch_slug: Total-Logical-Combinatorial-Coverage
     l4_classification: Logic Coverage Metric
     l5_metric: Total Logical Combinatorial Coverage
     taxonomy_classification: Logic Coverage Metric
@@ -104,27 +76,17 @@ techniques:
       python:
         primary: Crosshair
         secondary: Mccabe
-      c:
-        primary: lizard
-        secondary: cyclomatic
-      cpp:
-        primary: Lizard
-        secondary: cyclomatic
-      java:
-        primary: CK
-        secondary: Pmd
-      csharp:
-        primary: lizard
-        secondary: csharp cyclomatic
-      javascript:
-        primary: Lizard
-        secondary: Plato
-      typescript:
-        primary: Lizard
-        secondary: Plato
+    emitted_directly: false
+    derivation: "logical_combinatorial_coverage = (\n    functions_without_counterexample\
+      \ / max(total_functions_checked, 1)\n)"
+    raw_formula: Testability Score = AVG(MI) across all modules in scope
+    expected_threshold: AVG MI >= 65 across codebase
+    normalisation: Score = MIN(100, AVG_MI) [already 0–100 scale]
+    execution_frequency: Every Commit / PR
     source_row: 9
   - metric_code: TDI
-    module_key: technical_debt
+    module_key: technical_debt_impact
+    branch_slug: Technical-Debt-Impact
     l4_classification: Maintainability Analysis
     l5_metric: Technical Debt Impact
     taxonomy_classification: Maintainability Analysis
@@ -132,27 +94,16 @@ techniques:
       python:
         primary: Radon/Lizard
         secondary: Mccabe
-      c:
-        primary: lizard
-        secondary: cyclomatic
-      cpp:
-        primary: Lizard
-        secondary: cyclomatic
-      java:
-        primary: CK
-        secondary: Pmd
-      csharp:
-        primary: lizard
-        secondary: csharp cyclomatic
-      javascript:
-        primary: Lizard
-        secondary: Plato
-      typescript:
-        primary: Lizard
-        secondary: Plato
+    emitted_directly: false
+    derivation: technical_debt = sum(ccn_values)
+    raw_formula: MI Delta = AVG(MI_Current_Sprint) – AVG(MI_Previous_Sprint)
+    expected_threshold: MI Delta >= 0 (no degradation); flag if delta < -3
+    normalisation: MAX(0, 100 + (MI_Delta × 5)) capped 0–100
+    execution_frequency: Every Commit / PR
     source_row: 10
   - metric_code: QRA
-    module_key: qa_prioritization
+    module_key: qa_resource_allocation
+    branch_slug: QA-Resource-Allocation
     l4_classification: Test Prioritization
     l5_metric: QA Resource Allocation
     taxonomy_classification: Test Prioritization
@@ -160,24 +111,13 @@ techniques:
       python:
         primary: testmon
         secondary: Mccabe
-      c:
-        primary: lizard
-        secondary: cyclomatic
-      cpp:
-        primary: Lizard
-        secondary: cyclomatic
-      java:
-        primary: CK
-        secondary: Pmd
-      csharp:
-        primary: lizard
-        secondary: csharp cyclomatic
-      javascript:
-        primary: Lizard
-        secondary: Plato
-      typescript:
-        primary: Lizard
-        secondary: Plato
+    emitted_directly: false
+    derivation: test_execution_efficiency = tests_saved / max(tests_all, 1)
+    raw_formula: Regression Risk Score = Count(Modules with MI < 40 AND recently churned)
+      × 25
+    expected_threshold: 0 low-MI modules with recent churn
+    normalisation: MAX(0, 100 – Regression_Risk_Score)
+    execution_frequency: Every Commit / PR
     source_row: 11
 - technique_code: RM
   l2: Readability / Maintainability
@@ -186,6 +126,7 @@ techniques:
   metrics:
   - metric_code: TDI
     module_key: technical_debt_impact
+    branch_slug: Technical-Debt-Impact
     l4_classification: Maintainability Evaluation
     l5_metric: Technical Debt Impact
     taxonomy_classification: Maintainability Evaluation
@@ -193,27 +134,19 @@ techniques:
       python:
         primary: cognitive-ast
         secondary: radon_cc
-      c:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      cpp:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      java:
-        primary: PMD
-        secondary: cognitive calc
-      csharp:
-        primary: clang tidy
-        secondary: simple cognitive
-      javascript:
-        primary: eslint-plugin-sonarjs
-        secondary: sonarjs
-      typescript:
-        primary: sonarjs
-        secondary: complexity report
+    emitted_directly: false
+    derivation: 'cc - cognitive complexity value
+
+      Technical Debt Score = min(100, cc * 5)'
+    raw_formula: Debt Score = Count(Units with CogCC > 15) × 10 + Count(Units with
+      CogCC 10–15) × 3
+    expected_threshold: 0 units exceeding CogCC 15; < 5 units in amber range (10–15)
+    normalisation: MAX(0, 100 – Debt_Score)
+    execution_frequency: Every Commit / PR
     source_row: 12
   - metric_code: UTC
     module_key: unit_test_complexity
+    branch_slug: Unit-Test-Complexity
     l4_classification: Testability Analysis
     l5_metric: Unit Test Complexity
     taxonomy_classification: Testability Analysis
@@ -221,27 +154,18 @@ techniques:
       python:
         primary: cognitive-ast
         secondary: radon_cc
-      c:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      cpp:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      java:
-        primary: PMD
-        secondary: cognitive calc
-      csharp:
-        primary: clang tidy
-        secondary: simple cognitive
-      javascript:
-        primary: eslint-plugin-sonarjs
-        secondary: sonarjs
-      typescript:
-        primary: sonarjs
-        secondary: complexity report
+    emitted_directly: false
+    derivation: 'cc - cognitive complexity value
+
+      Unit Test Complexity = cc + 1'
+    raw_formula: Test Complexity Score = AVG(CogCC) across all testable units in module
+    expected_threshold: AVG CogCC <= 10 per module
+    normalisation: MAX(0, 100 – ((AVG_CogCC – 1) / 9 × 100)) capped 0–100
+    execution_frequency: Every Commit / PR
     source_row: 13
   - metric_code: DEPR
     module_key: defect_probability
+    branch_slug: Defect-Probability
     l4_classification: Risk Detection
     l5_metric: Defect Probability
     taxonomy_classification: Risk Detection
@@ -249,27 +173,18 @@ techniques:
       python:
         primary: cognitive-ast
         secondary: radon_cc
-      c:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      cpp:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      java:
-        primary: PMD
-        secondary: cognitive calc
-      csharp:
-        primary: clang tidy
-        secondary: simple cognitive
-      javascript:
-        primary: eslint-plugin-sonarjs
-        secondary: sonarjs
-      typescript:
-        primary: sonarjs
-        secondary: complexity report
+    emitted_directly: false
+    derivation: 'cc - cognitive complexity value
+
+      Defect Probability (%) = min(90, cc * 4)'
+    raw_formula: Hotspot Count = Count(functions where CogCC > 20)
+    expected_threshold: 0 functions with CogCC > 20
+    normalisation: MAX(0, 100 – (Hotspot_Count × 15))
+    execution_frequency: Every Commit / PR
     source_row: 14
   - metric_code: MOOP
     module_key: modularization_opportunity
+    branch_slug: Modularization-Opportunity
     l4_classification: Refactoring Guidance
     l5_metric: Modularization Opportunity
     taxonomy_classification: Refactoring Guidance
@@ -277,27 +192,19 @@ techniques:
       python:
         primary: cognitive-ast
         secondary: radon_cc
-      c:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      cpp:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      java:
-        primary: PMD
-        secondary: cognitive calc
-      csharp:
-        primary: clang tidy
-        secondary: simple cognitive
-      javascript:
-        primary: eslint-plugin-sonarjs
-        secondary: sonarjs
-      typescript:
-        primary: sonarjs
-        secondary: complexity report
+    emitted_directly: false
+    derivation: 'cc - cognitive complexity value
+
+      Suggested Modules = ceil(cc / 5)'
+    raw_formula: Refactor Candidate % = (Functions with CogCC > 15 / Total Functions)
+      × 100
+    expected_threshold: < 5% of functions flagged as refactor candidates
+    normalisation: MAX(0, 100 – (Refactor_Candidate% × 10))
+    execution_frequency: Every Commit / PR
     source_row: 15
   - metric_code: RFF
     module_key: reviewer_fatigue_factor
+    branch_slug: Reviewer-Fatigue-Factor
     l4_classification: Code Review Support
     l5_metric: Reviewer Fatigue Factor
     taxonomy_classification: Code Review Support
@@ -305,27 +212,19 @@ techniques:
       python:
         primary: cognitive-ast
         secondary: radon_cc
-      c:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      cpp:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      java:
-        primary: PMD
-        secondary: cognitive calc
-      csharp:
-        primary: clang tidy
-        secondary: simple cognitive
-      javascript:
-        primary: eslint-plugin-sonarjs
-        secondary: sonarjs
-      typescript:
-        primary: sonarjs
-        secondary: complexity report
+    emitted_directly: false
+    derivation: 'cc - cognitive complexity value
+
+      Fatigue Score = cc * 3'
+    raw_formula: Fatigue Score = Count(PRs containing functions with CogCC > 15) /
+      Total PRs × 100
+    expected_threshold: < 10% of PRs contain high-CogCC functions
+    normalisation: MAX(0, 100 – (Fatigue_Score × 5))
+    execution_frequency: Every Commit / PR
     source_row: 16
   - metric_code: QRA
     module_key: qa_resource_allocation
+    branch_slug: QA-Resource-Allocation
     l4_classification: Testing Effort Prioritization
     l5_metric: QA Resource Allocation
     taxonomy_classification: Testing Effort Prioritization
@@ -333,27 +232,19 @@ techniques:
       python:
         primary: cognitive-ast
         secondary: radon_cc
-      c:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      cpp:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      java:
-        primary: PMD
-        secondary: cognitive calc
-      csharp:
-        primary: clang tidy
-        secondary: simple cognitive
-      javascript:
-        primary: eslint-plugin-sonarjs
-        secondary: sonarjs
-      typescript:
-        primary: sonarjs
-        secondary: complexity report
+    emitted_directly: false
+    derivation: 'cc - cognitive complexity value
+
+      if cc <= 3 → Low priority'
+    raw_formula: Allocation Coverage % = (High-CogCC Functions with dedicated test
+      cases / Total High-CogCC Functions) × 100
+    expected_threshold: 100% of CogCC > 15 functions have dedicated test cases
+    normalisation: Score = Allocation Coverage % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 17
   - metric_code: HCL
     module_key: human_cognitive_load
+    branch_slug: Human-Cognitive-Load
     l4_classification: Code Understandability Analysis
     l5_metric: Human Cognitive Load
     taxonomy_classification: Code Understandability Analysis
@@ -361,24 +252,14 @@ techniques:
       python:
         primary: cognitive-ast
         secondary: radon_cc
-      c:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      cpp:
-        primary: clang-tidy
-        secondary: cognitive-c-parser
-      java:
-        primary: PMD
-        secondary: cognitive calc
-      csharp:
-        primary: clang tidy
-        secondary: simple cognitive
-      javascript:
-        primary: eslint-plugin-sonarjs
-        secondary: sonarjs
-      typescript:
-        primary: sonarjs
-        secondary: complexity report
+    emitted_directly: false
+    derivation: 'cc - cognitive complexity value
+
+      Cognitive Load Score = cc * 5'
+    raw_formula: CogCC = sum of nesting-weighted increments for breaks in linear flow
+    expected_threshold: <= 15 per unit (lower is better)
+    normalisation: MAX(0, 100 – ((CogCC–1)/14 × 100))  capped 0–100
+    execution_frequency: Every Commit / PR
     source_row: 18
 - technique_code: CQ
   l2: Code Quality Auditing
@@ -387,6 +268,7 @@ techniques:
   metrics:
   - metric_code: MPFP
     module_key: multi_point_failure_probability
+    branch_slug: Multi-Point-Failure-Probability
     l4_classification: Defect Propagation Risk Detection
     l5_metric: Multi-Point Failure Probability
     taxonomy_classification: Defect Propagation Risk Detection
@@ -394,27 +276,17 @@ techniques:
       python:
         primary: jscpd
         secondary: copydetect
-      c:
-        primary: jscpd
-        secondary: copydetect
-      cpp:
-        primary: jscpd
-        secondary: copydetect
-      java:
-        primary: CPD
-        secondary: checkstyle duplicate
-      csharp:
-        primary: jscpd
-        secondary: pmd cpd
-      javascript:
-        primary: jscpd
-        secondary: null
-      typescript:
-        primary: jscpd
-        secondary: jsinspect
+    emitted_directly: false
+    derivation: MPFP = (GroupSize \times RiskFactor) / TotalFragments
+    raw_formula: Propagation Risk = Count(Duplicated Blocks with confirmed defect
+      history) × 20
+    expected_threshold: 0 defect-linked duplicated blocks in codebase
+    normalisation: MAX(0, 100 – Propagation_Risk)
+    execution_frequency: Daily
     source_row: 20
   - metric_code: RELO
     module_key: redundancy_localization
+    branch_slug: Redundancy-Localization
     l4_classification: Refactoring Identification
     l5_metric: Redundancy Localization
     taxonomy_classification: Refactoring Identification
@@ -422,27 +294,17 @@ techniques:
       python:
         primary: jscpd
         secondary: copydetect
-      c:
-        primary: jscpd
-        secondary: copydetect
-      cpp:
-        primary: jscpd
-        secondary: copydetect
-      java:
-        primary: CPD
-        secondary: checkstyle duplicate
-      csharp:
-        primary: jscpd
-        secondary: pmd cpd
-      javascript:
-        primary: jscpd
-        secondary: null
-      typescript:
-        primary: jscpd
-        secondary: jsinspect
+    emitted_directly: false
+    derivation: Count of unique clone groups in report
+    raw_formula: Redundancy Score = Count(Clone Clusters with >= 3 instances) × 10
+      + Count(Clone Clusters with 2 instances) × 3
+    expected_threshold: 0 clone clusters with 3+ instances; < 5 two-instance clusters
+    normalisation: MAX(0, 100 – Redundancy_Score)
+    execution_frequency: Daily
     source_row: 21
   - metric_code: SCS
     module_key: structural_cleanliness_score
+    branch_slug: Structural-Cleanliness-Score
     l4_classification: Code Quality Assessment
     l5_metric: Structural Cleanliness Score
     taxonomy_classification: Code Quality Assessment
@@ -450,27 +312,16 @@ techniques:
       python:
         primary: jscpd
         secondary: copydetect
-      c:
-        primary: jscpd
-        secondary: copydetect
-      cpp:
-        primary: jscpd
-        secondary: copydetect
-      java:
-        primary: CPD
-        secondary: checkstyle duplicate
-      csharp:
-        primary: jscpd
-        secondary: pmd cpd
-      javascript:
-        primary: jscpd
-        secondary: null
-      typescript:
-        primary: jscpd
-        secondary: jsinspect
+    emitted_directly: false
+    derivation: "Derivation: \n1 - (Total Duplicated Lines / Total Repository Lines)"
+    raw_formula: Cleanliness Score = 100 – ((Duplicated Lines / Total Lines) × 100)
+    expected_threshold: '>= 95% unique code (< 5% duplication)'
+    normalisation: Score = Cleanliness Score % [gate at 95%]
+    execution_frequency: Daily
     source_row: 22
   - metric_code: TSS
     module_key: test_suite_streamlining
+    branch_slug: Test-Suite-Streamlining
     l4_classification: Test Maintenance Reduction
     l5_metric: Test Suite Streamlining
     taxonomy_classification: Test Maintenance Reduction
@@ -478,27 +329,17 @@ techniques:
       python:
         primary: jscpd
         secondary: copydetect
-      c:
-        primary: jscpd
-        secondary: copydetect
-      cpp:
-        primary: jscpd
-        secondary: copydetect
-      java:
-        primary: CPD
-        secondary: checkstyle duplicate
-      csharp:
-        primary: jscpd
-        secondary: pmd cpd
-      javascript:
-        primary: jscpd
-        secondary: null
-      typescript:
-        primary: jscpd
-        secondary: jsinspect
+    emitted_directly: false
+    derivation: Duplicated Lines / Total lines
+    raw_formula: Redundant Test % = (Duplicated Test Blocks / Total Test Lines) ×
+      100
+    expected_threshold: < 3% test code duplication
+    normalisation: MAX(0, 100 – (Redundant_Test% / 3 × 100))
+    execution_frequency: Daily
     source_row: 23
   - metric_code: ABPO
     module_key: abstraction_potential
+    branch_slug: Abstraction-Potential
     l4_classification: Refactoring Opportunity Detection
     l5_metric: Abstraction Potential
     taxonomy_classification: Refactoring Opportunity Detection
@@ -506,27 +347,17 @@ techniques:
       python:
         primary: jscpd
         secondary: copydetect
-      c:
-        primary: jscpd
-        secondary: copydetect
-      cpp:
-        primary: jscpd
-        secondary: copydetect
-      java:
-        primary: CPD
-        secondary: checkstyle duplicate
-      csharp:
-        primary: jscpd
-        secondary: pmd cpd
-      javascript:
-        primary: jscpd
-        secondary: null
-      typescript:
-        primary: jscpd
-        secondary: jsinspect
+    emitted_directly: false
+    derivation: Avg Fragment Size \times Clone Group Size
+    raw_formula: Abstraction Score = (Lines Reducible via Abstraction / Total Duplicated
+      Lines) × 100
+    expected_threshold: '>= 80% of duplicated lines are abstractable'
+    normalisation: Score = Abstraction Score % [gate at 80%]
+    execution_frequency: Daily
     source_row: 24
   - metric_code: RFM
     module_key: regression_focus_mapping
+    branch_slug: Regression-Focus-Mapping
     l4_classification: Risk-Based Testing Prioritization
     l5_metric: Regression Focus Mapping
     taxonomy_classification: Risk-Based Testing Prioritization
@@ -534,27 +365,17 @@ techniques:
       python:
         primary: jscpd
         secondary: copydetect
-      c:
-        primary: jscpd
-        secondary: copydetect
-      cpp:
-        primary: jscpd
-        secondary: copydetect
-      java:
-        primary: CPD
-        secondary: checkstyle duplicate
-      csharp:
-        primary: jscpd
-        secondary: pmd cpd
-      javascript:
-        primary: jscpd
-        secondary: null
-      typescript:
-        primary: jscpd
-        secondary: jsinspect
+    emitted_directly: false
+    derivation: Total Duplicated Tokens / Total Repository Tokens
+    raw_formula: Regression Focus % = (Duplicated Modules Covered by Regression Tests
+      / Total Duplicated Modules) × 100
+    expected_threshold: 100% of duplicated modules included in regression suite
+    normalisation: Score = Regression Focus % [gate at 100%]
+    execution_frequency: Daily
     source_row: 25
   - metric_code: SYVE
     module_key: synchronization_verification
+    branch_slug: Synchronization-Verification
     l4_classification: Maintainability Testing
     l5_metric: Synchronization Verification
     taxonomy_classification: Maintainability Testing
@@ -562,24 +383,12 @@ techniques:
       python:
         primary: jscpd
         secondary: copydetect
-      c:
-        primary: jscpd
-        secondary: copydetect
-      cpp:
-        primary: jscpd
-        secondary: copydetect
-      java:
-        primary: CPD
-        secondary: checkstyle duplicate
-      csharp:
-        primary: jscpd
-        secondary: pmd cpd
-      javascript:
-        primary: jscpd
-        secondary: null
-      typescript:
-        primary: jscpd
-        secondary: jsinspect
+    emitted_directly: false
+    derivation: Lines in SYNC fragment / Lines in ASYNC fragment
+    raw_formula: Duplication % = (Duplicated Lines / Total Lines) × 100
+    expected_threshold: <= 5% duplicated lines preferred
+    normalisation: MAX(0, 100 – (Dup% / 5 × 100))  [5% = score 0]
+    execution_frequency: Daily
     source_row: 26
 - technique_code: LR
   l2: Static Code Analysis
@@ -588,6 +397,7 @@ techniques:
   metrics:
   - metric_code: VDK
     module_key: violation_density_per_kloc
+    branch_slug: Violation-Density-Per-KLOC
     l4_classification: Rule Detection Test
     l5_metric: Violation Density per KLOC
     taxonomy_classification: Rule Detection Test
@@ -595,27 +405,16 @@ techniques:
       python:
         primary: pylint
         secondary: flake8
-      c:
-        primary: cppcheck
-        secondary: clang-tidy
-      cpp:
-        primary: cppcheck
-        secondary: clang-tidy
-      java:
-        primary: Checkstyle
-        secondary: pmd
-      csharp:
-        primary: cppcheck
-        secondary: roslyn
-      javascript:
-        primary: eslint
-        secondary: null
-      typescript:
-        primary: biome
-        secondary: eslint
+    emitted_directly: false
+    derivation: N = total number of JSON objects (violations)
+    raw_formula: Violation Density = (Errors×3 + Warnings×1) / (LOC/1000)
+    expected_threshold: 0 blocking errors; < 10 warnings per KLOC
+    normalisation: MAX(0, 100 – (Errors×5 + Warnings×1))
+    execution_frequency: Every Commit / PR
     source_row: 27
   - metric_code: RWI
     module_key: resource_waste_identification
+    branch_slug: Resource-Waste-Identification
     l4_classification: Unused Variable Detection
     l5_metric: Resource Waste Identification
     taxonomy_classification: Unused Variable Detection
@@ -623,27 +422,17 @@ techniques:
       python:
         primary: pylint
         secondary: flake8
-      c:
-        primary: cppcheck
-        secondary: clang-tidy
-      cpp:
-        primary: cppcheck
-        secondary: clang-tidy
-      java:
-        primary: Checkstyle
-        secondary: pmd
-      csharp:
-        primary: cppcheck
-        secondary: roslyn
-      javascript:
-        primary: eslint
-        secondary: null
-      typescript:
-        primary: biome
-        secondary: eslint
+    emitted_directly: false
+    derivation: Total Duplicate Lines = SUM(endLine - line + 1)
+    raw_formula: Dead Allocation % = (Unused Variables / Total Declared Variables)
+      × 100
+    expected_threshold: < 1% unused variable declarations per module
+    normalisation: MAX(0, 100 – (Dead_Allocation% × 50))
+    execution_frequency: Every Commit / PR
     source_row: 28
   - metric_code: SCS
     module_key: semantic_consistency_score
+    branch_slug: Semantic-Consistency-Score
     l4_classification: Naming Convention Validation
     l5_metric: Semantic Consistency Score
     taxonomy_classification: Naming Convention Validation
@@ -651,27 +440,17 @@ techniques:
       python:
         primary: pylint
         secondary: flake8
-      c:
-        primary: cppcheck
-        secondary: clang-tidy
-      cpp:
-        primary: cppcheck
-        secondary: clang-tidy
-      java:
-        primary: Checkstyle
-        secondary: pmd
-      csharp:
-        primary: cppcheck
-        secondary: roslyn
-      javascript:
-        primary: eslint
-        secondary: null
-      typescript:
-        primary: biome
-        secondary: eslint
+    emitted_directly: false
+    derivation: Semantic Consistency = 1 - (Unique Rule Types / Total Violations)
+    raw_formula: Convention Violation Rate = (Naming Violations / Total Named Identifiers)
+      × 100
+    expected_threshold: < 2% naming convention violations across codebase
+    normalisation: MAX(0, 100 – (Convention_Violation_Rate × 25))
+    execution_frequency: Every Commit / PR
     source_row: 29
   - metric_code: SUS
     module_key: syntactic_uniformity_score
+    branch_slug: Syntactic-Uniformity-Score
     l4_classification: Code Style Rule Validation
     l5_metric: Syntactic Uniformity Score
     taxonomy_classification: Code Style Rule Validation
@@ -679,27 +458,17 @@ techniques:
       python:
         primary: pylint
         secondary: flake8
-      c:
-        primary: cppcheck
-        secondary: clang-tidy
-      cpp:
-        primary: cppcheck
-        secondary: clang-tidy
-      java:
-        primary: Checkstyle
-        secondary: pmd
-      csharp:
-        primary: cppcheck
-        secondary: roslyn
-      javascript:
-        primary: eslint
-        secondary: null
-      typescript:
-        primary: biome
-        secondary: eslint
+    emitted_directly: false
+    derivation: Uniformity Score = 1 - (STDEV(duplicate line counts) / AVERAGE(duplicate
+      line counts))
+    raw_formula: Style Violation Density = Style Violations / (LOC / 1000)
+    expected_threshold: < 5 style violations per KLOC
+    normalisation: MAX(0, 100 – (Style_Violation_Density × 10))
+    execution_frequency: Every Commit / PR
     source_row: 30
   - metric_code: STM
     module_key: structural_threshold_monitoring
+    branch_slug: Structural-Threshold-Monitoring
     l4_classification: Complexity Rule Detection
     l5_metric: Structural Threshold Monitoring
     taxonomy_classification: Complexity Rule Detection
@@ -707,27 +476,17 @@ techniques:
       python:
         primary: pylint
         secondary: flake8
-      c:
-        primary: cppcheck
-        secondary: clang-tidy
-      cpp:
-        primary: cppcheck
-        secondary: clang-tidy
-      java:
-        primary: Checkstyle
-        secondary: pmd
-      csharp:
-        primary: cppcheck
-        secondary: roslyn
-      javascript:
-        primary: eslint
-        secondary: null
-      typescript:
-        primary: biome
-        secondary: eslint
+    emitted_directly: false
+    derivation: Threshold Score = COUNT(duplicate lines > 10) / Total Violations
+    raw_formula: Complexity Breach Count = Count(Functions exceeding nesting depth
+      > 4 or length > 50 lines)
+    expected_threshold: 0 functions breaching nesting or length thresholds
+    normalisation: MAX(0, 100 – (Complexity_Breach_Count × 10))
+    execution_frequency: Every Commit / PR
     source_row: 31
   - metric_code: IMPR
     module_key: impact_prioritization
+    branch_slug: Impact-Prioritization
     l4_classification: Rule Severity Classification
     l5_metric: Impact Prioritization
     taxonomy_classification: Rule Severity Classification
@@ -735,27 +494,17 @@ techniques:
       python:
         primary: pylint
         secondary: flake8
-      c:
-        primary: cppcheck
-        secondary: clang-tidy
-      cpp:
-        primary: cppcheck
-        secondary: clang-tidy
-      java:
-        primary: Checkstyle
-        secondary: pmd
-      csharp:
-        primary: cppcheck
-        secondary: roslyn
-      javascript:
-        primary: eslint
-        secondary: null
-      typescript:
-        primary: biome
-        secondary: eslint
+    emitted_directly: false
+    derivation: Impact Score = Unique Modules / Unique Files
+    raw_formula: Severity Score = Count(Error violations) × 10 + Count(Warning violations)
+      × 2 + Count(Info violations) × 0.5
+    expected_threshold: 0 Error-level violations; < 10 Warning-level per KLOC
+    normalisation: MAX(0, 100 – Severity_Score)
+    execution_frequency: Every Commit / PR
     source_row: 32
   - metric_code: ARA
     module_key: aggregated_risk_assessment
+    branch_slug: Aggregated-Risk-Assessment
     l4_classification: Multiple Violations Detection
     l5_metric: Aggregated Risk Assessment
     taxonomy_classification: Multiple Violations Detection
@@ -763,27 +512,17 @@ techniques:
       python:
         primary: pylint
         secondary: flake8
-      c:
-        primary: cppcheck
-        secondary: clang-tidy
-      cpp:
-        primary: cppcheck
-        secondary: clang-tidy
-      java:
-        primary: Checkstyle
-        secondary: pmd
-      csharp:
-        primary: cppcheck
-        secondary: roslyn
-      javascript:
-        primary: eslint
-        secondary: null
-      typescript:
-        primary: biome
-        secondary: eslint
+    emitted_directly: false
+    derivation: Risk Score = Total Violations * Average Duplicate Lines
+    raw_formula: Hotfile Score = Count(Files with > 10 violations) × 15 + Count(Files
+      with 5–10 violations) × 5
+    expected_threshold: 0 files with > 10 violations; < 5 files in amber range
+    normalisation: MAX(0, 100 – Hotfile_Score)
+    execution_frequency: Every Commit / PR
     source_row: 33
   - metric_code: ACTU
     module_key: accuracy_tuning
+    branch_slug: Accuracy-Tuning
     l4_classification: False Positive Prevention
     l5_metric: Accuracy Tuning
     taxonomy_classification: False Positive Prevention
@@ -791,27 +530,18 @@ techniques:
       python:
         primary: pylint
         secondary: flake8
-      c:
-        primary: cppcheck
-        secondary: clang-tidy
-      cpp:
-        primary: cppcheck
-        secondary: clang-tidy
-      java:
-        primary: Checkstyle
-        secondary: pmd
-      csharp:
-        primary: cppcheck
-        secondary: roslyn
-      javascript:
-        primary: eslint
-        secondary: null
-      typescript:
-        primary: biome
-        secondary: eslint
+    emitted_directly: false
+    derivation: Accuracy = 1 - (Unique Rule IDs - 1) / Total Violations
+    raw_formula: False Positive Rate % = (Intentionally suppressed violations / Total
+      Flagged Violations) × 100
+    expected_threshold: < 10% suppression rate (high suppression signals misconfigured
+      rules)
+    normalisation: MAX(0, 100 – (False_Positive_Rate% × 5))
+    execution_frequency: Every Commit / PR
     source_row: 34
   - metric_code: PSE
     module_key: project_specific_enforcement
+    branch_slug: Project-Specific-Enforcement
     l4_classification: Custom Rule Validation
     l5_metric: Project-Specific Enforcement
     taxonomy_classification: Custom Rule Validation
@@ -819,27 +549,17 @@ techniques:
       python:
         primary: pylint
         secondary: flake8
-      c:
-        primary: cppcheck
-        secondary: clang-tidy
-      cpp:
-        primary: cppcheck
-        secondary: clang-tidy
-      java:
-        primary: Checkstyle
-        secondary: pmd
-      csharp:
-        primary: cppcheck
-        secondary: roslyn
-      javascript:
-        primary: N/A
-        secondary: null
-      typescript:
-        primary: biome
-        secondary: eslint
+    emitted_directly: false
+    derivation: Project Enforcement = Unique Modules / Total Violations
+    raw_formula: Custom Rule Pass Rate % = (Custom Rule Checks Passing / Total Custom
+      Rule Checks) × 100
+    expected_threshold: 100% of project-specific custom rules passing
+    normalisation: Score = Custom Rule Pass Rate % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 35
   - metric_code: ENST
     module_key: environment_standardization
+    branch_slug: Environment-Standardization
     l4_classification: Configuration File Handling
     l5_metric: Environment Standardization
     taxonomy_classification: Configuration File Handling
@@ -847,27 +567,17 @@ techniques:
       python:
         primary: pylint
         secondary: flake8
-      c:
-        primary: cppcheck
-        secondary: clang-tidy
-      cpp:
-        primary: cppcheck
-        secondary: clang-tidy
-      java:
-        primary: Checkstyle
-        secondary: pmd
-      csharp:
-        primary: cppcheck
-        secondary: roslyn
-      javascript:
-        primary: eslint
-        secondary: null
-      typescript:
-        primary: biome
-        secondary: eslint
+    emitted_directly: false
+    derivation: Standardization = Unique Types / Total Violations
+    raw_formula: Config Drift Score = Count(Devs with lint config deviating from team
+      standard)
+    expected_threshold: 0 developers with non-standard lint configuration
+    normalisation: MAX(0, 100 – (Config_Drift_Score × 25))
+    execution_frequency: Every Commit / PR
     source_row: 36
   - metric_code: AUGA
     module_key: automated_gatekeeping
+    branch_slug: Automated-Gatekeeping
     l4_classification: CI/CD Integration Validation
     l5_metric: Automated Gatekeeping
     taxonomy_classification: CI/CD Integration Validation
@@ -875,27 +585,17 @@ techniques:
       python:
         primary: pylint
         secondary: flake8
-      c:
-        primary: cppcheck
-        secondary: clang-tidy
-      cpp:
-        primary: cppcheck
-        secondary: clang-tidy
-      java:
-        primary: Checkstyle
-        secondary: pmd
-      csharp:
-        primary: cppcheck
-        secondary: roslyn
-      javascript:
-        primary: eslint
-        secondary: null
-      typescript:
-        primary: biome
-        secondary: eslint
+    emitted_directly: false
+    derivation: Gate = IF(Total Violations > Threshold, "FAIL", "PASS")
+    raw_formula: Pipeline Gate Pass Rate % = (Builds passing lint gate / Total Builds)
+      × 100
+    expected_threshold: 100% of builds pass lint quality gate before merge
+    normalisation: Score = Pipeline Gate Pass Rate % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 37
   - metric_code: QAT
     module_key: quality_audit_trail
+    branch_slug: Quality-Audit-Trail
     l4_classification: Violation Reporting Validation
     l5_metric: Quality Audit Trail
     taxonomy_classification: Violation Reporting Validation
@@ -903,24 +603,13 @@ techniques:
       python:
         primary: pylint
         secondary: flake8
-      c:
-        primary: cppcheck
-        secondary: clang-tidy
-      cpp:
-        primary: cppcheck
-        secondary: clang-tidy
-      java:
-        primary: Checkstyle
-        secondary: pmd
-      csharp:
-        primary: cppcheck
-        secondary: roslyn
-      javascript:
-        primary: eslint
-        secondary: null
-      typescript:
-        primary: biome
-        secondary: eslint
+    emitted_directly: false
+    derivation: Audit Score = Filled Fields / Total Expected Fields
+    raw_formula: Report Coverage % = (Violations with line-number + fix suggestion
+      logged / Total Violations) × 100
+    expected_threshold: '>= 95% of violations have complete audit log entry'
+    normalisation: Score = Report Coverage % [gate at 95%]
+    execution_frequency: Every Commit / PR
     source_row: 38
 - technique_code: SX
   l2: Security White-box Testing
@@ -929,227 +618,145 @@ techniques:
   metrics:
   - metric_code: BPC
     module_key: best_practice_compliance
+    branch_slug: Best-Practice-Compliance
     l4_classification: Secure Coding Validation
     l5_metric: Best Practice Compliance
     taxonomy_classification: Secure Coding Validation
     tools:
       python:
-        primary: 'Semgrep OSS
-
-          +
-
-          Bandit'
+        primary: Semgrep OSS + Bandit
         secondary: semgrep
-      c:
-        primary: cppcheck
-        secondary: flawfinder
-      cpp:
-        primary: cppcheck
-        secondary: flawfinder
-      java:
-        primary: spotbugs
-        secondary: pmd sast
-      csharp:
-        primary: cppcheck
-        secondary: roslyn sast
-      javascript:
-        primary: eslint-plugin-security
-        secondary: security-eslint
-      typescript:
-        primary: security eslint
-        secondary: snyk
+    emitted_directly: false
+    derivation: 'Compliance Score =
+
+      1 - ((Semgrep ERROR + Bandit HIGH + Bandit MEDIUM) / loc)'
+    raw_formula: Compliance Score = (OWASP-Compliant Functions / Total Functions)
+      × 100
+    expected_threshold: '>= 95% of functions compliant with secure coding guidelines'
+    normalisation: Score = Compliance Score % [gate at 95%]
+    execution_frequency: Every Commit / PR
     source_row: 40
   - metric_code: EPS
     module_key: entry_point_sanitization
+    branch_slug: Entry-Point-Sanitization
     l4_classification: Input Validation Testing
     l5_metric: Entry Point Sanitization
     taxonomy_classification: Input Validation Testing
     tools:
       python:
-        primary: 'Semgrep OSS
-
-          +
-
-          Bandit'
+        primary: Semgrep OSS + Bandit
         secondary: bandit
-      c:
-        primary: cppcheck
-        secondary: flawfinder
-      cpp:
-        primary: cppcheck
-        secondary: flawfinder
-      java:
-        primary: spotbugs
-        secondary: pmd sast
-      csharp:
-        primary: cppcheck
-        secondary: roslyn sast
-      javascript:
-        primary: eslint-plugin-security
-        secondary: N/A
-      typescript:
-        primary: security eslint
-        secondary: snyk
+    emitted_directly: false
+    derivation: 'Entry Points =
+
+      count(Semgrep injection-related results)'
+    raw_formula: Sanitization Coverage % = (Sanitized Entry Points / Total External
+      Entry Points) × 100
+    expected_threshold: 100% of external entry points have input sanitization
+    normalisation: Score = Sanitization Coverage % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 41
   - metric_code: SIT
     module_key: sensitive_information_tracking
+    branch_slug: Sensitive-Information-Tracking
     l4_classification: Data Flow Security Analysis
     l5_metric: Sensitive Information Tracking
     taxonomy_classification: Data Flow Security Analysis
     tools:
       python:
-        primary: 'Semgrep OSS
-
-          +
-
-          Bandit'
+        primary: Semgrep OSS + Bandit
         secondary: bandit
-      c:
-        primary: cppcheck
-        secondary: flawfinder
-      cpp:
-        primary: cppcheck
-        secondary: flawfinder
-      java:
-        primary: spotbugs
-        secondary: pmd sast
-      csharp:
-        primary: cppcheck
-        secondary: roslyn sast
-      javascript:
-        primary: eslint-plugin-security
-        secondary: N/A
-      typescript:
-        primary: security eslint
-        secondary: snyk
+    emitted_directly: false
+    derivation: 'Sensitive Exposure Count =
+
+      count(Semgrep secret-related results)'
+    raw_formula: Data Leak Score = Count(Sensitive Data Paths reaching insecure output)
+      × 30
+    expected_threshold: 0 sensitive data paths reaching logs or unencrypted output
+    normalisation: MAX(0, 100 – Data_Leak_Score) [any leak = BLOCK]
+    execution_frequency: Every Commit / PR
     source_row: 42
   - metric_code: ACV
     module_key: access_control_verification
+    branch_slug: Access-Control-Verification
     l4_classification: Authentication & Authorization Weakness Detection
     l5_metric: Access Control Verification
     taxonomy_classification: Authentication & Authorization Weakness Detection
     tools:
       python:
-        primary: 'Semgrep OSS
-
-          +
-
-          Bandit'
+        primary: Semgrep OSS + Bandit
         secondary: bandit
-      c:
-        primary: cppcheck
-        secondary: flawfinder
-      cpp:
-        primary: cppcheck
-        secondary: flawfinder
-      java:
-        primary: spotbugs
-        secondary: pmd sast
-      csharp:
-        primary: cppcheck
-        secondary: roslyn sast
-      javascript:
-        primary: N/A
-        secondary: N/A
-      typescript:
-        primary: security eslint
-        secondary: snyk
+    emitted_directly: false
+    derivation: 'Access Control Risk =
+
+      count(Semgrep auth-related results)'
+    raw_formula: Auth Weakness Score = Count(Auth Bypass Paths) × 25 + Count(Weak
+      Session Issues) × 10
+    expected_threshold: 0 auth bypass paths; 0 weak session management findings
+    normalisation: MAX(0, 100 – Auth_Weakness_Score)
+    execution_frequency: Every Commit / PR
     source_row: 43
   - metric_code: SCS
     module_key: supply_chain_security
+    branch_slug: Supply-Chain-Security
     l4_classification: Dependency & Library Vulnerability Detection
     l5_metric: Supply Chain Security
     taxonomy_classification: Dependency & Library Vulnerability Detection
     tools:
       python:
-        primary: 'Semgrep OSS
-
-          +
-
-          Bandit'
+        primary: Semgrep OSS + Bandit
         secondary: semgrep
-      c:
-        primary: cppcheck
-        secondary: flawfinder
-      cpp:
-        primary: cppcheck
-        secondary: flawfinder
-      java:
-        primary: spotbugs
-        secondary: pmd sast
-      csharp:
-        primary: cppcheck
-        secondary: roslyn sast
-      javascript:
-        primary: N/A
-        secondary: N/A
-      typescript:
-        primary: security eslint
-        secondary: snyk
+    emitted_directly: false
+    derivation: 'Supply Chain Risk =
+
+      count(Semgrep dependency-related results)'
+    raw_formula: Supply Chain Score = Count(Vuln Library Imports) × 20 + Count(Outdated
+      Imports) × 5
+    expected_threshold: 0 vulnerable library imports in production build
+    normalisation: MAX(0, 100 – Supply_Chain_Score)
+    execution_frequency: Every Commit / PR
     source_row: 44
   - metric_code: REAL
     module_key: regulatory_alignment
+    branch_slug: Regulatory-Alignment
     l4_classification: Compliance & Security Standard Validation
     l5_metric: Regulatory Alignment
     taxonomy_classification: Compliance & Security Standard Validation
     tools:
       python:
-        primary: 'Semgrep OSS
-
-          +
-
-          Bandit'
+        primary: Semgrep OSS + Bandit
         secondary: bandit
-      c:
-        primary: cppcheck
-        secondary: flawfinder
-      cpp:
-        primary: cppcheck
-        secondary: flawfinder
-      java:
-        primary: spotbugs
-        secondary: pmd sast
-      csharp:
-        primary: cppcheck
-        secondary: roslyn sast
-      javascript:
-        primary: eslint-plugin-security
-        secondary: N/A
-      typescript:
-        primary: security eslint
-        secondary: snyk
+    emitted_directly: false
+    derivation: 'Regulatory Coverage =
+
+      count(Semgrep results with CWE/OWASP)'
+    raw_formula: Regulatory Score = (Controls Passing Scan / Total Required Controls)
+      × 100
+    expected_threshold: '>= 100% of regulatory controls passing static scan'
+    normalisation: Score = Regulatory Score % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 45
   - metric_code: ESI
     module_key: exploit_surface_identification
+    branch_slug: Exploit-Surface-Identification
     l4_classification: Security Vulnerability Detection
     l5_metric: Exploit Surface Identification
     taxonomy_classification: Security Vulnerability Detection
     tools:
       python:
-        primary: 'Semgrep OSS
-
-          +
-
-          Bandit'
+        primary: Semgrep OSS + Bandit
         secondary: bandit
-      c:
-        primary: cppcheck
-        secondary: flawfinder
-      cpp:
-        primary: cppcheck
-        secondary: flawfinder
-      java:
-        primary: spotbugs
-        secondary: pmd sast
-      csharp:
-        primary: cppcheck
-        secondary: roslyn sast
-      javascript:
-        primary: eslint-plugin-security
-        secondary: security-eslint
-      typescript:
-        primary: security eslint
-        secondary: snyk
+    emitted_directly: false
+    derivation: 'Exploit Surface =
+
+      Semgrep ERROR + Semgrep WARNING
+
+      + Bandit HIGH + Bandit MEDIUM'
+    raw_formula: SAST Score = Count(Critical)×25 + Count(High)×10 + Count(Medium)×3
+      + Count(Low)×1
+    expected_threshold: 0 Critical; 0 High findings per build
+    normalisation: MAX(0, 100 – SAST_Score)
+    execution_frequency: Every Commit / PR
     source_row: 46
 - technique_code: DR
   l2: Security White-box Testing
@@ -1158,6 +765,7 @@ techniques:
   metrics:
   - metric_code: HRM
     module_key: hidden_relationship_mapping
+    branch_slug: Hidden-Relationship-Mapping
     l4_classification: Transitive Dependency Analysis
     l5_metric: Hidden Relationship Mapping
     taxonomy_classification: Transitive Dependency Analysis
@@ -1165,33 +773,17 @@ techniques:
       python:
         primary: pip-audit
         secondary: safety
-      c:
-        primary: cve-bin-tool
-        secondary: dependency-inventory-audit
-      cpp:
-        primary: cvebin
-        secondary: dependency inventory
-      java:
-        primary: 'OWASP
-
-          Dependency-
-
-          Check
-
-          10.0.4'
-        secondary: N/A
-      csharp:
-        primary: cvebin
-        secondary: dotnet list package
-      javascript:
-        primary: npm ls
-        secondary: null
-      typescript:
-        primary: pnpm audit
-        secondary: npm audit
+    emitted_directly: false
+    derivation: Hidden Relationship Risk =  count(total vulnerabilities) / count(dependencies)
+    raw_formula: Transitive Risk Score = Count(Vulnerable Transitive Deps) × 20 +
+      Count(Flagged Transitive Deps) × 5
+    expected_threshold: 0 vulnerable transitive dependencies in resolved tree
+    normalisation: MAX(0, 100 – Transitive_Risk_Score)
+    execution_frequency: Daily
     source_row: 47
   - metric_code: LRV
     module_key: legal_risk_validation
+    branch_slug: Legal-Risk-Validation
     l4_classification: License Compliance Testing
     l5_metric: Legal Risk Validation
     taxonomy_classification: License Compliance Testing
@@ -1199,33 +791,17 @@ techniques:
       python:
         primary: pip-audit
         secondary: safety
-      c:
-        primary: cve-bin-tool
-        secondary: dependency-inventory-audit
-      cpp:
-        primary: cvebin
-        secondary: dependency inventory
-      java:
-        primary: 'OWASP
-
-          Dependency-
-
-          Check
-
-          10.0.5'
-        secondary: N/A
-      csharp:
-        primary: cvebin
-        secondary: dotnet list package
-      javascript:
-        primary: N/A
-        secondary: null
-      typescript:
-        primary: pnpm audit
-        secondary: npm audit
+    emitted_directly: false
+    derivation: Legal Risk Proxy =  count(CVE-linked vulnerabilities)
+    raw_formula: License Risk = Count(Copyleft Deps) × 20 + Count(Restricted Deps)
+      × 10
+    expected_threshold: 0 copyleft licenses in production dependencies
+    normalisation: MAX(0, 100 – License_Risk)
+    execution_frequency: Weekly
     source_row: 48
   - metric_code: TIV
     module_key: trust_integrity_verification
+    branch_slug: Trust-Integrity-Verification
     l4_classification: Supply Chain Security Analysis
     l5_metric: Trust Integrity Verification
     taxonomy_classification: Supply Chain Security Analysis
@@ -1233,33 +809,19 @@ techniques:
       python:
         primary: pip-audit
         secondary: safety
-      c:
-        primary: cve-bin-tool
-        secondary: dependency-inventory-audit
-      cpp:
-        primary: cvebin
-        secondary: dependency inventory
-      java:
-        primary: 'OWASP
+    emitted_directly: false
+    derivation: 'Supply Chain Risk =
 
-          Dependency-
-
-          Check
-
-          10.0.6'
-        secondary: N/A
-      csharp:
-        primary: cvebin
-        secondary: dotnet list package
-      javascript:
-        primary: npm audit + npm ls
-        secondary: null
-      typescript:
-        primary: pnpm audit
-        secondary: npm audit
+      count(all vulnerabilities across dependencies)'
+    raw_formula: Trust Score = Count(Unverified Package Sources) × 25 + Count(Deprecated
+      Registries) × 10
+    expected_threshold: 0 packages from unverified or deprecated sources
+    normalisation: MAX(0, 100 – Trust_Score)
+    execution_frequency: Daily
     source_row: 49
   - metric_code: CVT
     module_key: community_vitality_tracking
+    branch_slug: Community-Vitality-Tracking
     l4_classification: Dependency Health Monitoring
     l5_metric: Community Vitality Tracking
     taxonomy_classification: Dependency Health Monitoring
@@ -1267,33 +829,18 @@ techniques:
       python:
         primary: pip-audit
         secondary: safety
-      c:
-        primary: cve-bin-tool
-        secondary: dependency-inventory-audit
-      cpp:
-        primary: cvebin
-        secondary: dependency inventory
-      java:
-        primary: 'OWASP
-
-          Dependency-
-
-          Check
-
-          10.0.7'
-        secondary: N/A
-      csharp:
-        primary: cvebin
-        secondary: dotnet list package
-      javascript:
-        primary: npm audit + npm ls
-        secondary: null
-      typescript:
-        primary: pnpm audit
-        secondary: npm audit
+    emitted_directly: false
+    derivation: Community Vitality Score = count(vulnerabilities with fix_versions)
+      / count(total vulnerabilities)
+    raw_formula: Vitality Score = Count(Abandoned Deps, no commit > 12 months) × 20
+      + Count(Low-activity Deps) × 5
+    expected_threshold: 0 abandoned dependencies in production stack
+    normalisation: MAX(0, 100 – Vitality_Score)
+    execution_frequency: Weekly
     source_row: 50
   - metric_code: MER
     module_key: mitigation_effort_ranking
+    branch_slug: Mitigation-Effort-Ranking
     l4_classification: Risk Prioritization
     l5_metric: Mitigation Effort Ranking
     taxonomy_classification: Risk Prioritization
@@ -1301,33 +848,17 @@ techniques:
       python:
         primary: pip-audit
         secondary: safety
-      c:
-        primary: cve-bin-tool
-        secondary: dependency-inventory-audit
-      cpp:
-        primary: cvebin
-        secondary: dependency inventory
-      java:
-        primary: 'OWASP
-
-          Dependency-
-
-          Check
-
-          10.0.8'
-        secondary: N/A
-      csharp:
-        primary: cvebin
-        secondary: dotnet list package
-      javascript:
-        primary: npm audit + npm ls
-        secondary: null
-      typescript:
-        primary: pnpm audit
-        secondary: npm audit
+    emitted_directly: false
+    derivation: Mitigation Effort = count(vulnerabilities with fix_versions)
+    raw_formula: Prioritization Coverage % = (Critical/High CVE Deps with assigned
+      fix / Total Critical/High CVE Deps) × 100
+    expected_threshold: 100% of Critical/High CVE deps have assigned remediation
+    normalisation: Score = Prioritization Coverage % [gate at 100%]
+    execution_frequency: Daily
     source_row: 51
   - metric_code: RTA
     module_key: real_time_alerting
+    branch_slug: Real-Time-Alerting
     l4_classification: Continuous Dependency Monitoring
     l5_metric: Real-Time Alerting
     taxonomy_classification: Continuous Dependency Monitoring
@@ -1335,33 +866,18 @@ techniques:
       python:
         primary: pip-audit
         secondary: safety
-      c:
-        primary: cve-bin-tool
-        secondary: dependency-inventory-audit
-      cpp:
-        primary: cvebin
-        secondary: dependency inventory
-      java:
-        primary: 'OWASP
-
-          Dependency-
-
-          Check
-
-          10.0.9'
-        secondary: N/A
-      csharp:
-        primary: cvebin
-        secondary: dotnet list package
-      javascript:
-        primary: npm audit + npm ls
-        secondary: null
-      typescript:
-        primary: pnpm audit
-        secondary: npm audit
+    emitted_directly: false
+    derivation: Alert Signal =  count(new vulnerabilities detected in scan)
+    raw_formula: Alert Response Rate % = (New CVE Alerts Actioned within SLA / Total
+      New CVE Alerts) × 100
+    expected_threshold: 100% of new CVE alerts actioned within 24hrs (Critical) /
+      72hrs (High)
+    normalisation: Score = Alert Response Rate % [gate at 100%]
+    execution_frequency: Daily
     source_row: 52
   - metric_code: KCC
     module_key: known_cve_count
+    branch_slug: Known-CVE-Count
     l4_classification: Vulnerability Dependency Detection
     l5_metric: Known CVE Count
     taxonomy_classification: Vulnerability Dependency Detection
@@ -1369,33 +885,18 @@ techniques:
       python:
         primary: pip-audit
         secondary: safety
-      c:
-        primary: cve-bin-tool
-        secondary: dependency-inventory-audit
-      cpp:
-        primary: cvebin
-        secondary: dependency inventory
-      java:
-        primary: 'OWASP
+    emitted_directly: false
+    derivation: 'Known CVE Count =
 
-          Dependency-
-
-          Check
-
-          10.0.10'
-        secondary: N/A
-      csharp:
-        primary: cvebin
-        secondary: dotnet list package
-      javascript:
-        primary: npm audit + npm ls
-        secondary: null
-      typescript:
-        primary: pnpm audit
-        secondary: npm audit
+      count(vulnerabilities with CVE in aliases)'
+    raw_formula: CVE Score = Count(Crit)×25 + Count(High)×10 + Count(Med)×3 + Count(Low)×1
+    expected_threshold: 0 Critical CVEs; 0 High CVEs in production dependencies
+    normalisation: MAX(0, 100 – CVE_Score)
+    execution_frequency: Daily
     source_row: 53
   - metric_code: VLA
     module_key: version_lag_assessment
+    branch_slug: Version-Lag-Assessment
     l4_classification: Outdated Dependency Detection
     l5_metric: Version Lag Assessment
     taxonomy_classification: Outdated Dependency Detection
@@ -1403,30 +904,13 @@ techniques:
       python:
         primary: pip-audit
         secondary: safety
-      c:
-        primary: cve-bin-tool
-        secondary: dependency-inventory-audit
-      cpp:
-        primary: cvebin
-        secondary: dependency inventory
-      java:
-        primary: 'OWASP
-
-          Dependency-
-
-          Check
-
-          10.0.11'
-        secondary: N/A
-      csharp:
-        primary: cvebin
-        secondary: dotnet list package
-      javascript:
-        primary: N/A
-        secondary: null
-      typescript:
-        primary: pnpm audit
-        secondary: npm audit
+    emitted_directly: false
+    derivation: Version Lag =  count(vulnerabilities with fix_versions)
+    raw_formula: Version Lag Score = Count(Deps > 2 major versions behind) × 15 +
+      Count(Deps 1 major version behind) × 5
+    expected_threshold: 0 dependencies more than 2 major versions behind
+    normalisation: MAX(0, 100 – Version_Lag_Score)
+    execution_frequency: Daily
     source_row: 54
 - technique_code: ST
   l2: Control Flow Testing
@@ -1435,6 +919,7 @@ techniques:
   metrics:
   - metric_code: TCG
     module_key: test_case_granularity
+    branch_slug: Test-Case-Granularity
     l4_classification: Unit Testing Support
     l5_metric: Test Case Granularity
     taxonomy_classification: Unit Testing Support
@@ -1442,27 +927,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: pytest-cov
-      c:
-        primary: lcov
-        secondary: gcov-line-parser
-      cpp:
-        primary: coverage
-        secondary: gcov-line-parser
-      java:
-        primary: Spotbugs
-        secondary: cobetura
-      csharp:
-        primary: coverage
-        secondary: coverlet
-      javascript:
-        primary: nyc + mocha
-        secondary: null
-      typescript:
-        primary: vitest + @vitest/coverage-v8
-        secondary: nyc
+    emitted_directly: false
+    derivation: 'Granularity Proxy =
+
+      num_statements / count(dependencies)'
+    raw_formula: Granularity Score = (Functions with >= 1 dedicated unit test / Total
+      Functions) × 100
+    expected_threshold: '>= 90% of functions have at least one dedicated unit test'
+    normalisation: Score = Granularity Score % [gate at 90%]
+    execution_frequency: Every Commit / PR
     source_row: 56
   - metric_code: ULI
     module_key: unreachable_logic_identification
+    branch_slug: Unreachable-Logic-Identification
     l4_classification: Dead Code Detection
     l5_metric: Unreachable Logic Identification
     taxonomy_classification: Dead Code Detection
@@ -1470,27 +947,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: pytest-cov
-      c:
-        primary: lcov
-        secondary: gcov-line-parser
-      cpp:
-        primary: coverage
-        secondary: gcov-line-parser
-      java:
-        primary: Spotbugs
-        secondary: cobetura
-      csharp:
-        primary: coverage
-        secondary: coverlet
-      javascript:
-        primary: nyc + mocha
-        secondary: null
-      typescript:
-        primary: vitest + @vitest/coverage-v8
-        secondary: nyc
+    emitted_directly: true
+    derivation: 'Dead Code =
+
+      missing_lines'
+    raw_formula: Dead Code % = (Unexecuted Statements across all runs / Total Statements)
+      × 100
+    expected_threshold: < 2% dead code in production modules
+    normalisation: MAX(0, 100 – (Dead_Code% × 25))
+    execution_frequency: Every Commit / PR
     source_row: 57
   - metric_code: CGA
     module_key: coverage_gap_analysis
+    branch_slug: Coverage-Gap-Analysis
     l4_classification: Test Completeness Evaluation
     l5_metric: Coverage Gap Analysis
     taxonomy_classification: Test Completeness Evaluation
@@ -1498,27 +967,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: pytest-cov
-      c:
-        primary: lcov
-        secondary: gcov-line-parser
-      cpp:
-        primary: coverage
-        secondary: gcov-line-parser
-      java:
-        primary: Spotbugs
-        secondary: cobetura
-      csharp:
-        primary: coverage
-        secondary: coverlet
-      javascript:
-        primary: nyc + mocha
-        secondary: null
-      typescript:
-        primary: vitest + @vitest/coverage-v8
-        secondary: nyc
+    emitted_directly: false
+    derivation: 'Coverage Gap =
+
+      missing_lines / num_statements'
+    raw_formula: Gap Score = (Uncovered Statement Blocks / Total Statement Blocks)
+      × 100
+    expected_threshold: < 20% uncovered statement blocks (80% coverage floor)
+    normalisation: MAX(0, 100 – Gap_Score)
+    execution_frequency: Every Commit / PR
     source_row: 58
   - metric_code: SLC
     module_key: surface_level_correctness
+    branch_slug: Surface-Level-Correctness
     l4_classification: Basic Logic Validation
     l5_metric: Surface-Level Correctness
     taxonomy_classification: Basic Logic Validation
@@ -1526,27 +987,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: pytest-cov
-      c:
-        primary: lcov
-        secondary: gcov-line-parser
-      cpp:
-        primary: coverage
-        secondary: gcov-line-parser
-      java:
-        primary: Spotbugs
-        secondary: cobetura
-      csharp:
-        primary: coverage
-        secondary: coverlet
-      javascript:
-        primary: nyc + mocha
-        secondary: null
-      typescript:
-        primary: vitest + @vitest/coverage-v8
-        secondary: nyc
+    emitted_directly: true
+    derivation: 'Basic Validation =
+
+      percent_covered'
+    raw_formula: Smoke Pass Rate % = (Statements Executed without runtime error /
+      Total Statements Executed) × 100
+    expected_threshold: 100% of executed statements complete without runtime exception
+    normalisation: Score = Smoke Pass Rate % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 59
   - metric_code: STCO
     module_key: statement_coverage
+    branch_slug: Statement-Coverage
     l4_classification: Code Execution Verification
     l5_metric: Statement Coverage %
     taxonomy_classification: Code Execution Verification
@@ -1554,24 +1007,15 @@ techniques:
       python:
         primary: Coverage.py
         secondary: pytest-cov
-      c:
-        primary: lcov
-        secondary: gcov-line-parser
-      cpp:
-        primary: coverage
-        secondary: gcov-line-parser
-      java:
-        primary: Spotbugs
-        secondary: cobetura
-      csharp:
-        primary: coverage
-        secondary: coverlet
-      javascript:
-        primary: nyc + mocha
-        secondary: null
-      typescript:
-        primary: vitest + @vitest/coverage-v8
-        secondary: nyc
+    emitted_directly: true
+    derivation: 'Statement Coverage % =
+
+      percent_covered'
+    raw_formula: Statement Coverage % = (Statements Executed / Total Statements) ×
+      100
+    expected_threshold: '>= 80% statement coverage'
+    normalisation: Score = Statement Coverage %  [gate at 80%]
+    execution_frequency: Every Commit / PR
     source_row: 60
 - technique_code: BR
   l2: Control Flow Testing
@@ -1580,6 +1024,7 @@ techniques:
   metrics:
   - metric_code: BAC
     module_key: boolean_accuracy_check
+    branch_slug: Boolean-Accuracy-Check
     l4_classification: Conditional Logic Testing
     l5_metric: Boolean Accuracy Check
     taxonomy_classification: Conditional Logic Testing
@@ -1587,27 +1032,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: pytest-cov --cov-branch
-      c:
-        primary: lcov
-        secondary: gcov-branch-parser
-      cpp:
-        primary: coverage
-        secondary: gcov-branch-parser
-      java:
-        primary: Spotbugs
-        secondary: null
-      csharp:
-        primary: coverage
-        secondary: coverlet
-      javascript:
-        primary: nyc + mocha
-        secondary: null
-      typescript:
-        primary: vitest + @vitest/coverage-v8
-        secondary: nyc
+    emitted_directly: false
+    derivation: 'Boolean Accuracy =
+
+      covered_branches / num_branches'
+    raw_formula: Boolean Coverage % = (Logical Sub-expressions evaluated True AND
+      False / Total Sub-expressions × 2) × 100
+    expected_threshold: '>= 70% of boolean sub-expressions fully evaluated'
+    normalisation: Score = Boolean Coverage % [gate at 70%]
+    execution_frequency: Every Commit / PR
     source_row: 61
   - metric_code: SIM
     module_key: sequence_integrity_mapping
+    branch_slug: Sequence-Integrity-Mapping
     l4_classification: Control Flow Validation
     l5_metric: Sequence Integrity Mapping
     taxonomy_classification: Control Flow Validation
@@ -1615,27 +1052,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: pytest-cov --cov-branch
-      c:
-        primary: lcov
-        secondary: gcov-branch-parser
-      cpp:
-        primary: coverage
-        secondary: gcov-branch-parser
-      java:
-        primary: Spotbugs
-        secondary: N/A
-      csharp:
-        primary: coverage
-        secondary: coverlet
-      javascript:
-        primary: nyc + mocha
-        secondary: null
-      typescript:
-        primary: vitest + @vitest/coverage-v8
-        secondary: nyc
+    emitted_directly: false
+    derivation: 'Control Flow Integrity =
+
+      covered_branches - missing_branches'
+    raw_formula: Sequence Pass Rate % = (Valid Execution Transitions / Total Expected
+      Transitions) × 100
+    expected_threshold: 100% of expected code transitions execute in correct sequence
+    normalisation: Score = Sequence Pass Rate % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 62
   - metric_code: IBV
     module_key: iteration_boundary_verification
+    branch_slug: Iteration-Boundary-Verification
     l4_classification: Loop Condition Testing
     l5_metric: Iteration Boundary Verification
     taxonomy_classification: Loop Condition Testing
@@ -1643,27 +1072,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: pytest-cov --cov-branch
-      c:
-        primary: lcov
-        secondary: gcov-branch-parser
-      cpp:
-        primary: coverage
-        secondary: gcov-branch-parser
-      java:
-        primary: Spotbugs
-        secondary: N/A
-      csharp:
-        primary: coverage
-        secondary: coverlet
-      javascript:
-        primary: nyc + mocha
-        secondary: null
-      typescript:
-        primary: vitest + @vitest/coverage-v8
-        secondary: nyc
+    emitted_directly: true
+    derivation: 'Loop Boundary Risk =
+
+      missing_branches'
+    raw_formula: 'Loop Boundary Coverage % = (Loop Paths Tested: zero-trip + one-trip
+      + n-trip / Total Loop Paths) × 100'
+    expected_threshold: 100% of loops tested for zero-trip, one-trip, and n-trip paths
+    normalisation: Score = Loop Boundary Coverage % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 63
   - metric_code: BFI
     module_key: boundary_failure_identification
+    branch_slug: Boundary-Failure-Identification
     l4_classification: Edge Case Detection
     l5_metric: Boundary Failure Identification
     taxonomy_classification: Edge Case Detection
@@ -1671,27 +1092,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: pytest-cov --cov-branch
-      c:
-        primary: lcov
-        secondary: gcov-branch-parser
-      cpp:
-        primary: coverage
-        secondary: gcov-branch-parser
-      java:
-        primary: Spotbugs
-        secondary: N/A
-      csharp:
-        primary: coverage
-        secondary: coverlet
-      javascript:
-        primary: nyc + mocha
-        secondary: null
-      typescript:
-        primary: vitest + @vitest/coverage-v8
-        secondary: nyc
+    emitted_directly: false
+    derivation: 'Edge Case Risk =
+
+      missing_branches / num_branches'
+    raw_formula: Edge Failure Rate % = (Branch failures at boundary inputs / Total
+      Boundary Input Tests) × 100
+    expected_threshold: < 1% edge case branch failures
+    normalisation: MAX(0, 100 – (Edge_Failure_Rate% × 50))
+    execution_frequency: Every Commit / PR
     source_row: 64
   - metric_code: BMD
     module_key: branch_misdirection_discovery
+    branch_slug: Branch-Misdirection-Discovery
     l4_classification: Logic Error Detection
     l5_metric: Branch Misdirection Discovery
     taxonomy_classification: Logic Error Detection
@@ -1699,27 +1112,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: pytest-cov --cov-branch
-      c:
-        primary: lcov
-        secondary: gcov-branch-parser
-      cpp:
-        primary: coverage
-        secondary: gcov-branch-parser
-      java:
-        primary: Spotbugs
-        secondary: N/A
-      csharp:
-        primary: coverage
-        secondary: coverlet
-      javascript:
-        primary: nyc + mocha
-        secondary: null
-      typescript:
-        primary: vitest + @vitest/coverage-v8
-        secondary: nyc
+    emitted_directly: true
+    derivation: 'Logic Error Proxy =
+
+      missing_branches'
+    raw_formula: Misdirection Count = Count(Branches producing incorrect output despite
+      execution)
+    expected_threshold: 0 branches producing semantically incorrect results
+    normalisation: MAX(0, 100 – (Misdirection_Count × 20))
+    execution_frequency: Every Commit / PR
     source_row: 65
   - metric_code: DCGA
     module_key: decision_coverage_gap_analysis
+    branch_slug: Decision-Coverage-Gap-Analysis
     l4_classification: Test Case Completeness
     l5_metric: Decision Coverage Gap Analysis
     taxonomy_classification: Test Case Completeness
@@ -1727,27 +1132,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: pytest-cov --cov-branch
-      c:
-        primary: lcov
-        secondary: gcov-branch-parser
-      cpp:
-        primary: coverage
-        secondary: gcov-branch-parser
-      java:
-        primary: Spotbugs
-        secondary: N/A
-      csharp:
-        primary: coverage
-        secondary: coverlet
-      javascript:
-        primary: nyc + mocha
-        secondary: null
-      typescript:
-        primary: vitest + @vitest/coverage-v8
-        secondary: nyc
+    emitted_directly: false
+    derivation: 'Branch Coverage Gap =
+
+      missing_branches / num_branches'
+    raw_formula: Decision Gap % = (Untested Decision Branches / Total Decision Branches)
+      × 100
+    expected_threshold: < 30% decision branches untested (70% branch coverage floor)
+    normalisation: MAX(0, 100 – Decision_Gap%)
+    execution_frequency: Every Commit / PR
     source_row: 66
   - metric_code: BRCO
     module_key: branch_coverage
+    branch_slug: Branch-Coverage
     l4_classification: Decision Outcome Verification
     l5_metric: Branch Coverage %
     taxonomy_classification: Decision Outcome Verification
@@ -1755,24 +1152,14 @@ techniques:
       python:
         primary: Coverage.py
         secondary: pytest-cov --cov-branch
-      c:
-        primary: lcov
-        secondary: gcov-branch-parser
-      cpp:
-        primary: coverage
-        secondary: gcov-branch-parser
-      java:
-        primary: Spotbugs
-        secondary: N/A
-      csharp:
-        primary: coverage
-        secondary: coverlet
-      javascript:
-        primary: nyc + mocha
-        secondary: null
-      typescript:
-        primary: vitest + @vitest/coverage-v8
-        secondary: nyc
+    emitted_directly: true
+    derivation: 'Branch Coverage % =
+
+      percent_branches_covered'
+    raw_formula: Branch Coverage % = (Branches Hit / Total Branches) × 100
+    expected_threshold: '>= 70% branch coverage'
+    normalisation: Score = Branch Coverage %  [gate at 70%]
+    execution_frequency: Every Commit / PR
     source_row: 67
 - technique_code: PC
   l2: Control Flow Testing
@@ -1781,6 +1168,7 @@ techniques:
   metrics:
   - metric_code: PET
     module_key: path_execution_tracking
+    branch_slug: Path-Execution-Tracking
     l4_classification: Path Execution Tracking
     l5_metric: Path Execution Tracking
     taxonomy_classification: Path Execution Tracking
@@ -1788,27 +1176,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coverage.py + ast paths
-      c:
-        primary: Path Coverage
-        secondary: cfg-path-analyzer
-      cpp:
-        primary: Path coverage
-        secondary: cfg-path-analyzer
-      java:
-        primary: Jacoco
-        secondary: N/A
-      csharp:
-        primary: path coverage
-        secondary: csharp call paths
-      javascript:
-        primary: nyc v17.1.0
-        secondary: N/A
-      typescript:
-        primary: path
-        secondary: madge
+    emitted_directly: false
+    derivation: 'Path Execution Proxy =
+
+      covered_lines + covered_branches'
+    raw_formula: Execution Trace Coverage % = (Recorded Execution Paths / Total Feasible
+      Paths) × 100
+    expected_threshold: '>= 60% of feasible paths traced during test runs'
+    normalisation: Score = Execution Trace Coverage % [gate at 60%]
+    execution_frequency: Every Commit / PR
     source_row: 68
   - metric_code: FLV
     module_key: full_logic_validation
+    branch_slug: Full-Logic-Validation
     l4_classification: Complete Coverage Path Verification
     l5_metric: Full Logic Validation
     taxonomy_classification: Complete Coverage Path Verification
@@ -1816,27 +1196,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coverage.py + ast paths
-      c:
-        primary: Path Coverage
-        secondary: cfg-path-analyzer
-      cpp:
-        primary: Path coverage
-        secondary: cfg-path-analyzer
-      java:
-        primary: Jacoco
-        secondary: N/A
-      csharp:
-        primary: path coverage
-        secondary: csharp call paths
-      javascript:
-        primary: nyc v17.1.1
-        secondary: N/A
-      typescript:
-        primary: path
-        secondary: madge
+    emitted_directly: false
+    derivation: 'Full Path Coverage Proxy =
+
+      percent_covered * percent_branches_covered'
+    raw_formula: Full Path Validation % = (Paths fully traversed start-to-end / Total
+      CC-derived Paths) × 100
+    expected_threshold: 100% of CC-derived paths traversed at least once
+    normalisation: Score = Full Path Validation % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 69
   - metric_code: GAID
     module_key: gap_identification
+    branch_slug: Gap-Identification
     l4_classification: Partial Path Coverage Detection
     l5_metric: Gap Identification
     taxonomy_classification: Partial Path Coverage Detection
@@ -1844,27 +1216,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coverage.py + ast paths
-      c:
-        primary: Path Coverage
-        secondary: cfg-path-analyzer
-      cpp:
-        primary: Path coverage
-        secondary: cfg-path-analyzer
-      java:
-        primary: Jacoco
-        secondary: N/A
-      csharp:
-        primary: path coverage
-        secondary: csharp call paths
-      javascript:
-        primary: nyc v17.1.2
-        secondary: N/A
-      typescript:
-        primary: path
-        secondary: madge
+    emitted_directly: false
+    derivation: 'Path Gap =
+
+      missing_lines + missing_branches'
+    raw_formula: Path Gap % = (Partially or untested paths / Total Feasible Paths)
+      × 100
+    expected_threshold: < 40% of paths untested (60% floor)
+    normalisation: MAX(0, 100 – Path_Gap%)
+    execution_frequency: Every Commit / PR
     source_row: 70
   - metric_code: DLP
     module_key: deep_logic_probing
+    branch_slug: Deep-Logic-Probing
     l4_classification: Nested Condition Path Testing
     l5_metric: Deep Logic Probing
     taxonomy_classification: Nested Condition Path Testing
@@ -1872,27 +1236,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coverage_paths
-      c:
-        primary: Path Coverage
-        secondary: cfg-path-analyzer
-      cpp:
-        primary: Path coverage
-        secondary: cfg-path-analyzer
-      java:
-        primary: Jacoco
-        secondary: N/A
-      csharp:
-        primary: path coverage
-        secondary: csharp call paths
-      javascript:
-        primary: nyc v17.1.3
-        secondary: N/A
-      typescript:
-        primary: path
-        secondary: madge
+    emitted_directly: false
+    derivation: 'Nested Logic Risk =
+
+      num_branches - covered_branches'
+    raw_formula: Nesting Depth Coverage % = (Paths through nesting depth > 3 tested
+      / Total Deep Paths) × 100
+    expected_threshold: '>= 60% of deeply nested paths (depth > 3) exercised'
+    normalisation: Score = Nesting Depth Coverage % [gate at 60%]
+    execution_frequency: Every Commit / PR
     source_row: 71
   - metric_code: IRA
     module_key: iterative_route_analysis
+    branch_slug: Iterative-Route-Analysis
     l4_classification: Loop Path Detection
     l5_metric: Iterative Route Analysis
     taxonomy_classification: Loop Path Detection
@@ -1900,27 +1256,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coverage_paths
-      c:
-        primary: Path Coverage
-        secondary: cfg-path-analyzer
-      cpp:
-        primary: Path coverage
-        secondary: cfg-path-analyzer
-      java:
-        primary: Jacoco
-        secondary: N/A
-      csharp:
-        primary: path coverage
-        secondary: csharp call paths
-      javascript:
-        primary: N/A
-        secondary: N/A
-      typescript:
-        primary: path
-        secondary: madge
+    emitted_directly: false
+    derivation: 'Loop Path Risk =
+
+      missing_branches'
+    raw_formula: Loop Path Coverage % = (Zero-trip + One-trip + N-trip paths tested
+      / Total Loop Path variants) × 100
+    expected_threshold: 100% of loop variants (zero, one, n-trip) tested per loop
+    normalisation: Score = Loop Path Coverage % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 72
   - metric_code: GCD
     module_key: ghost_code_discovery
+    branch_slug: Ghost-Code-Discovery
     l4_classification: Unreachable Path Detection
     l5_metric: Ghost Code Discovery
     taxonomy_classification: Unreachable Path Detection
@@ -1928,27 +1276,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coverage_paths
-      c:
-        primary: Path Coverage
-        secondary: cfg-path-analyzer
-      cpp:
-        primary: Path coverage
-        secondary: cfg-path-analyzer
-      java:
-        primary: Jacoco
-        secondary: N/A
-      csharp:
-        primary: path coverage
-        secondary: csharp call paths
-      javascript:
-        primary: N/A
-        secondary: N/A
-      typescript:
-        primary: path
-        secondary: madge
+    emitted_directly: false
+    derivation: 'Unreachable Paths =
+
+      missing_lines + missing_branches'
+    raw_formula: Ghost Path % = (Logically unreachable paths detected / Total Declared
+      Paths) × 100
+    expected_threshold: < 2% of declared paths are unreachable (ghost code)
+    normalisation: MAX(0, 100 – (Ghost_Path% × 25))
+    execution_frequency: Every Commit / PR
     source_row: 73
   - metric_code: EFV
     module_key: error_flow_verification
+    branch_slug: Error-Flow-Verification
     l4_classification: Exception Path Handling
     l5_metric: Error Flow Verification
     taxonomy_classification: Exception Path Handling
@@ -1956,27 +1296,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coverage_paths
-      c:
-        primary: Path Coverage
-        secondary: cfg-path-analyzer
-      cpp:
-        primary: Path coverage
-        secondary: cfg-path-analyzer
-      java:
-        primary: Jacoco
-        secondary: N/A
-      csharp:
-        primary: path coverage
-        secondary: csharp call paths
-      javascript:
-        primary: N/A
-        secondary: N/A
-      typescript:
-        primary: path
-        secondary: madge
+    emitted_directly: true
+    derivation: 'Error Path Risk =
+
+      missing_branches'
+    raw_formula: Exception Path Coverage % = (Exception / Error paths exercised /
+      Total Exception Paths) × 100
+    expected_threshold: '>= 80% of exception paths exercised in test suite'
+    normalisation: Score = Exception Path Coverage % [gate at 80%]
+    execution_frequency: Every Commit / PR
     source_row: 74
   - metric_code: CCM
     module_key: cross_component_mapping
+    branch_slug: Cross-Component-Mapping
     l4_classification: Multi-Function Path Tracking
     l5_metric: Cross-Component Mapping
     taxonomy_classification: Multi-Function Path Tracking
@@ -1984,27 +1316,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coverage_paths
-      c:
-        primary: Path Coverage
-        secondary: cfg-path-analyzer
-      cpp:
-        primary: Path coverage
-        secondary: cfg-path-analyzer
-      java:
-        primary: Jacoco
-        secondary: N/A
-      csharp:
-        primary: path coverage
-        secondary: csharp call paths
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.0
-        secondary: N/A
-      typescript:
-        primary: path
-        secondary: madge
+    emitted_directly: false
+    derivation: 'Cross Function Coverage =
+
+      sum(covered_lines across functions)'
+    raw_formula: Integration Path Coverage % = (Cross-function paths tested / Total
+      Cross-function paths) × 100
+    expected_threshold: '>= 60% of cross-component paths verified'
+    normalisation: Score = Integration Path Coverage % [gate at 60%]
+    execution_frequency: Every Commit / PR
     source_row: 75
   - metric_code: AQE
     module_key: automated_quality_enforcement
+    branch_slug: Automated-Quality-Enforcement
     l4_classification: CI/CD Integration Test
     l5_metric: Automated Quality Enforcement
     taxonomy_classification: CI/CD Integration Test
@@ -2012,27 +1336,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coverage_paths
-      c:
-        primary: Path Coverage
-        secondary: cfg-path-analyzer
-      cpp:
-        primary: Path coverage
-        secondary: cfg-path-analyzer
-      java:
-        primary: Jacoco
-        secondary: N/A
-      csharp:
-        primary: path coverage
-        secondary: csharp call paths
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.1
-        secondary: N/A
-      typescript:
-        primary: path
-        secondary: madge
+    emitted_directly: false
+    derivation: 'Automation Readiness =
+
+      percent_covered + percent_branches_covered'
+    raw_formula: Pipeline Path Gate % = (Builds passing path coverage gate / Total
+      Builds) × 100
+    expected_threshold: 100% of builds pass minimum 60% path coverage gate
+    normalisation: Score = Pipeline Path Gate % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 76
   - metric_code: PACO
     module_key: path_coverage
+    branch_slug: Path-Coverage
     l4_classification: Path Detection Testing
     l5_metric: Path Coverage %
     taxonomy_classification: Path Detection Testing
@@ -2040,24 +1356,14 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coverage.py + ast paths
-      c:
-        primary: Path Coverage
-        secondary: cfg-path-analyzer
-      cpp:
-        primary: Path coverage
-        secondary: cfg-path-analyzer
-      java:
-        primary: Jacoco
-        secondary: N/A
-      csharp:
-        primary: path coverage
-        secondary: csharp call paths
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.2
-        secondary: js_paths
-      typescript:
-        primary: path
-        secondary: madge
+    emitted_directly: false
+    derivation: 'Path Coverage % (proxy) =
+
+      (percent_covered + percent_branches_covered) / 2'
+    raw_formula: Path Coverage % = (Paths Exercised / Total Feasible Paths) × 100
+    expected_threshold: '>= 60% path coverage (complex functions)'
+    normalisation: Score = Path Coverage %  [gate at 60%]
+    execution_frequency: Every Commit / PR
     source_row: 77
 - technique_code: MU
   l2: Mutation Testing
@@ -2066,6 +1372,7 @@ techniques:
   metrics:
   - metric_code: LES
     module_key: logic_error_sensitivity
+    branch_slug: Logic-Error-Sensitivity
     l4_classification: Fault Detection Capability
     l5_metric: Logic Error Sensitivity
     taxonomy_classification: Fault Detection Capability
@@ -2073,27 +1380,19 @@ techniques:
       python:
         primary: cosmic-ray
         secondary: mutmut
-      c:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      cpp:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      java:
-        primary: PIT
-        secondary: N/A
-      csharp:
-        primary: universalmutator
-        secondary: stryker net
-      javascript:
-        primary: StrykerJS + Mocha
-        secondary: N/A
-      typescript:
-        primary: ts mutation
-        secondary: stryker
+    emitted_directly: false
+    derivation: 'Logic Error Sensitivity =
+
+      (total jobs - surviving mutants) / total jobs'
+    raw_formula: Sensitivity Score = (Survived Mutants caught by assertion-only tests
+      / Total Survived Mutants) × 100
+    expected_threshold: '>= 70% of survived mutants caught by targeted assertion tests'
+    normalisation: Score = Sensitivity Score % [gate at 70%]
+    execution_frequency: Daily / Per Sprint
     source_row: 79
   - metric_code: TRA
     module_key: test_rigor_assessment
+    branch_slug: Test-Rigor-Assessment
     l4_classification: Test Coverage Quality Validation
     l5_metric: Test Rigor Assessment
     taxonomy_classification: Test Coverage Quality Validation
@@ -2101,27 +1400,18 @@ techniques:
       python:
         primary: cosmic-ray
         secondary: mutmut
-      c:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      cpp:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      java:
-        primary: PIT
-        secondary: N/A
-      csharp:
-        primary: universalmutator
-        secondary: stryker net
-      javascript:
-        primary: StrykerJS + Mocha
-        secondary: N/A
-      typescript:
-        primary: ts mutation
-        secondary: stryker
+    emitted_directly: false
+    derivation: 'Test Rigor =
+
+      (total jobs - surviving mutants) / total jobs'
+    raw_formula: Rigor Score = (Killed Mutants / Total Mutants Generated) × 100
+    expected_threshold: '>= 70% overall mutant kill rate'
+    normalisation: Score = Rigor Score % [gate at 70%]
+    execution_frequency: Daily / Per Sprint
     source_row: 80
   - metric_code: WSL
     module_key: weak_spot_localization
+    branch_slug: Weak-Spot-Localization
     l4_classification: Test Case Improvement Identification
     l5_metric: Weak Spot Localization
     taxonomy_classification: Test Case Improvement Identification
@@ -2129,27 +1419,16 @@ techniques:
       python:
         primary: cosmic-ray
         secondary: mutmut
-      c:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      cpp:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      java:
-        primary: PIT
-        secondary: N/A
-      csharp:
-        primary: universalmutator
-        secondary: stryker net
-      javascript:
-        primary: StrykerJS + Mocha
-        secondary: N/A
-      typescript:
-        primary: ts mutation
-        secondary: stryker
+    emitted_directly: false
+    derivation: Weak Spots = surviving mutants
+    raw_formula: Weak Spot Count = Count(Modules where Mutation Kill Rate < 50%)
+    expected_threshold: 0 modules with mutation kill rate below 50%
+    normalisation: MAX(0, 100 – (Weak_Spot_Count × 15))
+    execution_frequency: Daily / Per Sprint
     source_row: 81
   - metric_code: BMA
     module_key: boundary_mutant_analysis
+    branch_slug: Boundary-Mutant-Analysis
     l4_classification: Edge Case Detection
     l5_metric: Boundary Mutant Analysis
     taxonomy_classification: Edge Case Detection
@@ -2157,108 +1436,76 @@ techniques:
       python:
         primary: cosmic-ray
         secondary: mutmut
-      c:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      cpp:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      java:
-        primary: PIT
-        secondary: N/A
-      csharp:
-        primary: universalmutator
-        secondary: stryker net
-      javascript:
-        primary: StrykerJS + Mocha
-        secondary: N/A
-      typescript:
-        primary: ts mutation
-        secondary: stryker
+    emitted_directly: false
+    derivation: 'Boundary Weakness =
+
+      count(TestOutcome.SURVIVED)'
+    raw_formula: Boundary Kill Rate % = (Boundary Operator Mutants Killed / Total
+      Boundary Mutants) × 100
+    expected_threshold: '>= 80% of boundary operator mutants killed'
+    normalisation: Score = Boundary Kill Rate % [gate at 80%]
+    execution_frequency: Daily / Per Sprint
     source_row: 82
-  - metric_code: CRT
-    module_key: change_resilience_testing
-    l4_classification: Regression Testing Validation
-    l5_metric: Change Resilience Testing
-    taxonomy_classification: Regression Testing Validation
+  - metric_code: LES2
+    module_key: logic_error_sensitivity
+    branch_slug: Logic-Error-Sensitivity
+    l4_classification: Fault Detection Capability
+    l5_metric: Logic Error Sensitivity
+    taxonomy_classification: Fault Detection Capability
     tools:
       python:
         primary: cosmic-ray
         secondary: mutmut
-      c:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      cpp:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      java:
-        primary: PIT
-        secondary: N/A
-      csharp:
-        primary: universalmutator
-        secondary: stryker net
-      javascript:
-        primary: StrykerJS + Mocha
-        secondary: N/A
-      typescript:
-        primary: ts mutation
-        secondary: stryker
+    emitted_directly: false
+    derivation: 'Logic Error Sensitivity =
+
+      (total jobs - surviving mutants) / total jobs'
+    raw_formula: Resilience Score = (Post-Change Mutation Kill Rate / Pre-Change Mutation
+      Kill Rate) × 100
+    expected_threshold: Resilience Score >= 95% (< 5% kill rate degradation after
+      change)
+    normalisation: Score = MIN(100, Resilience_Score)
+    execution_frequency: Daily / Per Sprint
     source_row: 83
-  - metric_code: SIC
-    module_key: semantic_integrity_check
-    l4_classification: Code Logic Validation
-    l5_metric: Semantic Integrity Check
-    taxonomy_classification: Code Logic Validation
+  - metric_code: TRA2
+    module_key: test_rigor_assessment
+    branch_slug: Test-Rigor-Assessment
+    l4_classification: Test Coverage Quality Validation
+    l5_metric: Test Rigor Assessment
+    taxonomy_classification: Test Coverage Quality Validation
     tools:
       python:
         primary: cosmic-ray
         secondary: mutmut
-      c:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      cpp:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      java:
-        primary: PIT
-        secondary: N/A
-      csharp:
-        primary: universalmutator
-        secondary: stryker net
-      javascript:
-        primary: StrykerJS + Mocha
-        secondary: N/A
-      typescript:
-        primary: ts mutation
-        secondary: stryker
+    emitted_directly: false
+    derivation: 'Test Rigor =
+
+      (total jobs - surviving mutants) / total jobs'
+    raw_formula: Semantic Pass Rate % = (Mutants testing semantic behavior killed
+      / Total Semantic Mutants) × 100
+    expected_threshold: '>= 75% semantic mutant kill rate'
+    normalisation: Score = Semantic Pass Rate % [gate at 75%]
+    execution_frequency: Daily / Per Sprint
     source_row: 84
-  - metric_code: MKR
-    module_key: mutation_kill_rate
-    l4_classification: Test Suite Effectiveness Evaluation
-    l5_metric: Mutation Kill Rate %
-    taxonomy_classification: Test Suite Effectiveness Evaluation
+  - metric_code: LES3
+    module_key: logic_error_sensitivity
+    branch_slug: Logic-Error-Sensitivity
+    l4_classification: Fault Detection Capability
+    l5_metric: Logic Error Sensitivity
+    taxonomy_classification: Fault Detection Capability
     tools:
       python:
         primary: cosmic-ray
         secondary: mutmut
-      c:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      cpp:
-        primary: universalmutator + cmake + ctest
-        secondary: simple-mutation
-      java:
-        primary: PIT
-        secondary: N/A
-      csharp:
-        primary: universalmutator
-        secondary: stryker net
-      javascript:
-        primary: StrykerJS + Mocha
-        secondary: js_mutation
-      typescript:
-        primary: ts mutation
-        secondary: stryker
+    emitted_directly: false
+    derivation: 'Logic Error Sensitivity =
+
+      (total jobs - surviving mutants) / total jobs'
+    raw_formula: Mutation Kill Rate % = (Killed Mutants / Total Non-Equivalent Mutants)
+      × 100
+    expected_threshold: '>= 70% mutation kill rate'
+    normalisation: Score = Mutation Kill Rate %  [gate at 70%]
+    execution_frequency: Daily / Per Sprint
     source_row: 85
 - technique_code: CD
   l2: Test Regression/Coverage Analysis
@@ -2267,6 +1514,7 @@ techniques:
   metrics:
   - metric_code: CODE
     module_key: coverage_delta
+    branch_slug: Coverage-Delta
     l4_classification: Regression Testing Monitoring
     l5_metric: Coverage Delta %
     taxonomy_classification: Regression Testing Monitoring
@@ -2274,28 +1522,18 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coveragepy
-      c:
-        primary: git + lcov
-        secondary: coverage-diff-analyzer
-      cpp:
-        primary: coverage delta
-        secondary: coverage-diff-analyzer
-      java:
-        primary: JaCoCo XML + optional baseline XML; OR diff-coverage-maven-plugin
-          / gw-kit delta-coverage (Gradle)
-        secondary: null
-      csharp:
-        primary: coverage_delta
-        secondary: coverlet delta
-      javascript:
-        primary: diff-cover
-        secondary: null
-      typescript:
-        primary: coverage delta
-        secondary: coverage diff
+    emitted_directly: false
+    derivation: 'Coverage Delta % =
+
+      current.percent_covered - previous.percent_covered'
+    raw_formula: Coverage Delta = Coverage_Current% – Coverage_Previous%
+    expected_threshold: Delta >= 0% (no coverage regression); flag if delta < -2%
+    normalisation: MAX(0, 100 + (Delta × 10))  [capped 0–100]
+    execution_frequency: Every Commit / PR
     source_row: 86
   - metric_code: DPA
     module_key: discovery_power_assessment
+    branch_slug: Discovery-Power-Assessment
     l4_classification: Test Suite Effectiveness Tracking
     l5_metric: Discovery Power Assessment
     taxonomy_classification: Test Suite Effectiveness Tracking
@@ -2303,28 +1541,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coveragepy
-      c:
-        primary: git + lcov
-        secondary: coverage-diff-analyzer
-      cpp:
-        primary: coverage delta
-        secondary: coverage-diff-analyzer
-      java:
-        primary: JaCoCo + Git + diff-coverage plugin (recommended); JaCoCo alone for
-          whole-project LINE%
-        secondary: null
-      csharp:
-        primary: coverage_delta
-        secondary: coverlet delta
-      javascript:
-        primary: diff-cover
-        secondary: null
-      typescript:
-        primary: coverage delta
-        secondary: coverage diff
+    emitted_directly: false
+    derivation: 'Discovery Power =
+
+      (previous.missing_lines - current.missing_lines)'
+    raw_formula: Discovery Power % = (New Code Lines Covered by Tests / Total New
+      Code Lines Added) × 100
+    expected_threshold: '>= 80% of new code lines covered by test suite'
+    normalisation: Score = Discovery Power % [gate at 80%]
+    execution_frequency: Every Commit / PR
     source_row: 87
   - metric_code: DRG
     module_key: deployment_readiness_guard
+    branch_slug: Deployment-Readiness-Guard
     l4_classification: CI/CD Quality Gate Enforcement
     l5_metric: Deployment Readiness Guard
     taxonomy_classification: CI/CD Quality Gate Enforcement
@@ -2332,28 +1561,23 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coveragepy
-      c:
-        primary: git + lcov
-        secondary: coverage-diff-analyzer
-      cpp:
-        primary: coverage delta
-        secondary: coverage-diff-analyzer
-      java:
-        primary: JaCoCo (jacoco:check thresholds) + CI comparing XML or Sonar new-code
-          metrics
-        secondary: null
-      csharp:
-        primary: coverage_delta
-        secondary: coverlet delta
-      javascript:
-        primary: diff-cover
-        secondary: null
-      typescript:
-        primary: coverage delta
-        secondary: coverage diff
+    emitted_directly: false
+    derivation: 'Quality Gate =
+
+      IF current.percent_covered >= threshold
+
+      AND current.percent_branches_covered >= threshold
+
+      THEN PASS ELSE FAIL'
+    raw_formula: Gate Compliance % = (Builds with Coverage Delta >= 0 / Total Builds)
+      × 100
+    expected_threshold: 100% of builds show non-negative coverage delta
+    normalisation: Score = Gate Compliance % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 88
   - metric_code: REM
     module_key: ripple_effect_mapping
+    branch_slug: Ripple-Effect-Mapping
     l4_classification: Change Impact Analysis
     l5_metric: Ripple Effect Mapping
     taxonomy_classification: Change Impact Analysis
@@ -2361,27 +1585,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coveragepy
-      c:
-        primary: git + lcov
-        secondary: coverage-diff-analyzer
-      cpp:
-        primary: coverage delta
-        secondary: coverage-diff-analyzer
-      java:
-        primary: JaCoCo package counters in jacoco.xml
-        secondary: null
-      csharp:
-        primary: coverage_delta
-        secondary: coverlet delta
-      javascript:
-        primary: diff-cover
-        secondary: null
-      typescript:
-        primary: coverage delta
-        secondary: coverage diff
+    emitted_directly: false
+    derivation: 'Impact Ratio =
+
+      |Coverage Delta %| / previous.percent_covered'
+    raw_formula: Ripple Coverage % = (Downstream Modules re-tested after coverage
+      delta trigger / Total Affected Modules) × 100
+    expected_threshold: 100% of affected downstream modules re-verified
+    normalisation: Score = Ripple Coverage % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 89
   - metric_code: FLP
     module_key: fresh_logic_proofing
+    branch_slug: Fresh-Logic-Proofing
     l4_classification: New Code Testing Validation
     l5_metric: Fresh Logic Proofing
     taxonomy_classification: New Code Testing Validation
@@ -2389,27 +1605,19 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coveragepy
-      c:
-        primary: git + lcov
-        secondary: coverage-diff-analyzer
-      cpp:
-        primary: coverage delta
-        secondary: coverage-diff-analyzer
-      java:
-        primary: Git + JaCoCo line table + diff-coverage / Sonar
-        secondary: null
-      csharp:
-        primary: coverage_delta
-        secondary: coverlet delta
-      javascript:
-        primary: diff-cover
-        secondary: null
-      typescript:
-        primary: coverage delta
-        secondary: coverage diff
+    emitted_directly: false
+    derivation: 'New Code Coverage =
+
+      current.covered_lines - previous.covered_lines'
+    raw_formula: Fresh Coverage % = (New/Modified Functions with test coverage / Total
+      New/Modified Functions) × 100
+    expected_threshold: 100% of new or modified functions have test coverage
+    normalisation: Score = Fresh Coverage % [gate at 100%]
+    execution_frequency: Every Commit / PR
     source_row: 90
   - metric_code: SHB
     module_key: structural_health_benchmarking
+    branch_slug: Structural-Health-Benchmarking
     l4_classification: Quality Improvement Measurement
     l5_metric: Structural Health Benchmarking
     taxonomy_classification: Quality Improvement Measurement
@@ -2417,24 +1625,15 @@ techniques:
       python:
         primary: Coverage.py
         secondary: coveragepy
-      c:
-        primary: git + lcov
-        secondary: coverage-diff-analyzer
-      cpp:
-        primary: coverage delta
-        secondary: coverage-diff-analyzer
-      java:
-        primary: JaCoCo jacoco.xml (root + package counters)
-        secondary: null
-      csharp:
-        primary: coverage_delta
-        secondary: coverlet delta
-      javascript:
-        primary: diff-cover
-        secondary: null
-      typescript:
-        primary: coverage delta
-        secondary: coverage diff
+    emitted_directly: false
+    derivation: 'Quality Improvement =
+
+      (Coverage Delta % + Branch Delta %) / 2'
+    raw_formula: Health Benchmark Score = AVG(Coverage Delta) over rolling 5-sprint
+      window
+    expected_threshold: AVG rolling delta >= +1% (continuous improvement trend)
+    normalisation: MAX(0, 100 + (AVG_Rolling_Delta × 10)) capped 0–100
+    execution_frequency: Every Commit / PR
     source_row: 91
 - technique_code: DF
   l2: Data Flow Testing
@@ -2443,6 +1642,7 @@ techniques:
   metrics:
   - metric_code: DECO
     module_key: all_defs_coverage
+    branch_slug: All-Defs-Coverage
     l4_classification: Variable Definition Detection
     l5_metric: All-Defs Coverage %
     taxonomy_classification: Variable Definition Detection
@@ -2450,28 +1650,17 @@ techniques:
       python:
         primary: Beniget
         secondary: pyflakes
-      c:
-        primary: all definition
-        secondary: c-definition-analyzer
-      cpp:
-        primary: all definition
-        secondary: c-definition-analyzer
-      java:
-        primary: Static DU (ASM-DefUse / Spoon / ba-dua) + JaCoCo execution witness
-          — NOT JaCoCo alone
-        secondary: null
-      csharp:
-        primary: all definition
-        secondary: csharp def use
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.0
-        secondary: null
-      typescript:
-        primary: all definition
-        secondary: def cov
+    emitted_directly: false
+    derivation: all_defs_coverage = (used_definitions / max(definitions, 1)) * 100
+    raw_formula: All-Defs Coverage % = (Definition Points Covered / Total Definition
+      Points) × 100
+    expected_threshold: '>= 75% all-definition coverage'
+    normalisation: Score = All-Defs Coverage %
+    execution_frequency: Daily / Per Sprint
     source_row: 93
   - metric_code: DPC
     module_key: data_path_correlation
+    branch_slug: Data-Path-Correlation
     l4_classification: Definition-Use Mapping
     l5_metric: Data Path Correlation
     taxonomy_classification: Definition-Use Mapping
@@ -2479,27 +1668,17 @@ techniques:
       python:
         primary: coverage.py
         secondary: pyflakes
-      c:
-        primary: all definition
-        secondary: c-definition-analyzer
-      cpp:
-        primary: all definition
-        secondary: c-definition-analyzer
-      java:
-        primary: Static DU graph + JaCoCo line/branch (mb,cb) + optional ba-dua
-        secondary: null
-      csharp:
-        primary: all definition
-        secondary: csharp def use
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.1
-        secondary: null
-      typescript:
-        primary: all definition
-        secondary: def cov
+    emitted_directly: false
+    derivation: data_path_correlation = used_definitions / max(definitions, 1)
+    raw_formula: DU Correlation % = (Definitions linked to at least one Use / Total
+      Definitions) × 100
+    expected_threshold: '>= 75% of definitions linked to a verified use path'
+    normalisation: Score = DU Correlation % [gate at 75%]
+    execution_frequency: Daily / Per Sprint
     source_row: 94
   - metric_code: DPV
     module_key: du_path_validation
+    branch_slug: DU-Path-Validation
     l4_classification: Coverage Measurement
     l5_metric: DU-Path Validation
     taxonomy_classification: Coverage Measurement
@@ -2507,27 +1686,16 @@ techniques:
       python:
         primary: Beniget
         secondary: pyflakes
-      c:
-        primary: all definition
-        secondary: c-definition-analyzer
-      cpp:
-        primary: all definition
-        secondary: c-definition-analyzer
-      java:
-        primary: Static DU-path enumeration + JaCoCo
-        secondary: null
-      csharp:
-        primary: all definition
-        secondary: csharp def use
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.2
-        secondary: null
-      typescript:
-        primary: all definition
-        secondary: def cov
+    emitted_directly: false
+    derivation: du_path_validation = covered_lines / max(num_statements, 1)
+    raw_formula: DU-Path Coverage % = (DU Pairs Exercised / Total DU Pairs) × 100
+    expected_threshold: '>= 65% of all DU pairs exercised by test suite'
+    normalisation: Score = DU-Path Coverage % [gate at 65%]
+    execution_frequency: Daily / Per Sprint
     source_row: 95
   - metric_code: DDI
     module_key: dead_data_identification
+    branch_slug: Dead-Data-Identification
     l4_classification: Uncovered Definition Detection
     l5_metric: Dead Data Identification
     taxonomy_classification: Uncovered Definition Detection
@@ -2535,27 +1703,17 @@ techniques:
       python:
         primary: pylint
         secondary: pyflakes
-      c:
-        primary: all definition
-        secondary: c-definition-analyzer
-      cpp:
-        primary: all definition
-        secondary: c-definition-analyzer
-      java:
-        primary: Static DU + JaCoCo ghost lines (mi>0, ci=0)
-        secondary: null
-      csharp:
-        primary: all definition
-        secondary: csharp def use
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.3
-        secondary: null
-      typescript:
-        primary: all definition
-        secondary: def cov
+    emitted_directly: false
+    derivation: dead_data_count = unused_variable + unused_import
+    raw_formula: Dead Variable % = (Definitions with no reachable Use / Total Definitions)
+      × 100
+    expected_threshold: < 5% dead variable definitions in codebase
+    normalisation: MAX(0, 100 – (Dead_Variable% × 10))
+    execution_frequency: Daily / Per Sprint
     source_row: 96
   - metric_code: NBFA
     module_key: null_and_boundary_flow_analysis
+    branch_slug: Null-And-Boundary-Flow-Analysis
     l4_classification: Edge Case Handling
     l5_metric: Null and Boundary Flow Analysis
     taxonomy_classification: Edge Case Handling
@@ -2563,27 +1721,18 @@ techniques:
       python:
         primary: CrossHair
         secondary: pyflakes
-      c:
-        primary: all definition
-        secondary: c-definition-analyzer
-      cpp:
-        primary: all definition
-        secondary: c-definition-analyzer
-      java:
-        primary: JaCoCo branch probes + SpotBugs null patterns (NP_*) + optional Checker/NullAway
-        secondary: null
-      csharp:
-        primary: all definition
-        secondary: csharp def use
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.4
-        secondary: null
-      typescript:
-        primary: all definition
-        secondary: def cov
+    emitted_directly: false
+    derivation: "boundary_issue_ratio = (\n    functions_with_counterexample / max(total_functions_checked,\
+      \ 1)\n)"
+    raw_formula: Null Flow Risk Score = Count(Definitions reaching a Use with no null/boundary
+      guard) × 10
+    expected_threshold: 0 unguarded null or boundary flows from definition to use
+    normalisation: MAX(0, 100 – Null_Flow_Risk_Score)
+    execution_frequency: Daily / Per Sprint
     source_row: 97
   - metric_code: ATV
     module_key: audit_trail_verification
+    branch_slug: Audit-Trail-Verification
     l4_classification: Reporting Validation
     l5_metric: Audit Trail Verification
     taxonomy_classification: Reporting Validation
@@ -2591,24 +1740,13 @@ techniques:
       python:
         primary: pydriller
         secondary: pyflakes
-      c:
-        primary: all definition
-        secondary: c-definition-analyzer
-      cpp:
-        primary: all definition
-        secondary: c-definition-analyzer
-      java:
-        primary: JaCoCo report metadata + CI git SHA + tool versions
-        secondary: null
-      csharp:
-        primary: all definition
-        secondary: csharp def use
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.5
-        secondary: null
-      typescript:
-        primary: all definition
-        secondary: def cov
+    emitted_directly: false
+    derivation: audit_activity = insertions + deletions
+    raw_formula: Audit Completeness % = (Variable state transitions logged and traceable
+      / Total DU pairs) × 100
+    expected_threshold: '>= 90% of DU pairs have traceable execution audit record'
+    normalisation: Score = Audit Completeness % [gate at 90%]
+    execution_frequency: Daily / Per Sprint
     source_row: 98
 - technique_code: DU
   l2: Data Flow Testing
@@ -2617,6 +1755,7 @@ techniques:
   metrics:
   - metric_code: DPV
     module_key: data_processing_validation
+    branch_slug: Data-Processing-Validation
     l4_classification: Computational Use Detection (C-Use)
     l5_metric: Data Processing Validation
     taxonomy_classification: Computational Use Detection (C-Use)
@@ -2624,27 +1763,17 @@ techniques:
       python:
         primary: coverage.py + beniget
         secondary: all_uses
-      c:
-        primary: all uses
-        secondary: c-use-analyzer
-      cpp:
-        primary: all uses
-        secondary: c-use-analyzer
-      java:
-        primary: JaCoCo jacoco.xml (execution) + static DU / ba-dua for true use sets
-        secondary: null
-      csharp:
-        primary: all uses
-        secondary: csharp use coverage
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.6
-        secondary: null
-      typescript:
-        primary: ESLint (eslint-scope) + nyc
-        secondary: null
+    emitted_directly: false
+    derivation: c_use = len([d for d in definitions if d.user_count > 0])
+    raw_formula: C-Use Coverage % = (Computational DU Pairs Exercised / Total C-Use
+      Pairs) × 100
+    expected_threshold: '>= 65% of computational use pairs exercised'
+    normalisation: Score = C-Use Coverage % [gate at 65%]
+    execution_frequency: Daily / Per Sprint
     source_row: 99
   - metric_code: LIA
     module_key: logic_influence_assessment
+    branch_slug: Logic-Influence-Assessment
     l4_classification: Predicate Use Detection (P-Use)
     l5_metric: Logic Influence Assessment
     taxonomy_classification: Predicate Use Detection (P-Use)
@@ -2652,27 +1781,17 @@ techniques:
       python:
         primary: coverage.py + beniget
         secondary: all_uses
-      c:
-        primary: all uses
-        secondary: c-use-analyzer
-      cpp:
-        primary: all uses
-        secondary: c-use-analyzer
-      java:
-        primary: JaCoCo BRANCH + line mb/cb
-        secondary: null
-      csharp:
-        primary: all uses
-        secondary: csharp use coverage
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.7
-        secondary: null
-      typescript:
-        primary: ESLint (eslint-scope) + nyc
-        secondary: null
+    emitted_directly: true
+    derivation: p_use = covered_branches
+    raw_formula: P-Use Coverage % = (Predicate DU Pairs Exercised / Total P-Use Pairs)
+      × 100
+    expected_threshold: '>= 65% of predicate use pairs exercised (True + False outcomes)'
+    normalisation: Score = P-Use Coverage % [gate at 65%]
+    execution_frequency: Daily / Per Sprint
     source_row: 100
   - metric_code: PCM
     module_key: path_correlation_mapping
+    branch_slug: Path-Correlation-Mapping
     l4_classification: Definition-Use Pair Identification
     l5_metric: Path Correlation Mapping
     taxonomy_classification: Definition-Use Pair Identification
@@ -2680,27 +1799,17 @@ techniques:
       python:
         primary: coverage.py + beniget
         secondary: all_uses
-      c:
-        primary: all uses
-        secondary: c-use-analyzer
-      cpp:
-        primary: all uses
-        secondary: c-use-analyzer
-      java:
-        primary: JaCoCo line + branch probes (CFG path proxy)
-        secondary: null
-      csharp:
-        primary: all uses
-        secondary: csharp use coverage
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.8
-        secondary: null
-      typescript:
-        primary: ESLint (eslint-scope) + nyc
-        secondary: null
+    emitted_directly: false
+    derivation: def_use_pairs = sum(d.user_count for d in definitions)
+    raw_formula: DU Pair Map Coverage % = (Identified and Mapped DU Pairs / Total
+      Estimated DU Pairs) × 100
+    expected_threshold: '>= 90% of DU pairs identified and mapped in analysis'
+    normalisation: Score = DU Pair Map Coverage % [gate at 90%]
+    execution_frequency: Daily / Per Sprint
     source_row: 101
   - metric_code: CDP
     module_key: comprehensive_data_proofing
+    branch_slug: Comprehensive-Data-Proofing
     l4_classification: All-Uses Coverage Verification
     l5_metric: Comprehensive Data Proofing
     taxonomy_classification: All-Uses Coverage Verification
@@ -2708,27 +1817,17 @@ techniques:
       python:
         primary: coverage.py + beniget
         secondary: all_uses
-      c:
-        primary: all uses
-        secondary: c-use-analyzer
-      cpp:
-        primary: all uses
-        secondary: c-use-analyzer
-      java:
-        primary: JaCoCo LINE + BRANCH + INSTRUCTION rollups
-        secondary: null
-      csharp:
-        primary: all uses
-        secondary: csharp use coverage
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.9
-        secondary: null
-      typescript:
-        primary: ESLint (eslint-scope) + nyc
-        secondary: null
+    emitted_directly: false
+    derivation: all_uses_coverage = covered_lines / num_statements
+    raw_formula: Full DU Verification % = (DU Pairs with both C-Use and P-Use tested
+      / Total DU Pairs) × 100
+    expected_threshold: '>= 65% of DU pairs fully verified for both use types'
+    normalisation: Score = Full DU Verification % [gate at 65%]
+    execution_frequency: Daily / Per Sprint
     source_row: 102
   - metric_code: DFGA
     module_key: data_flow_gap_analysis
+    branch_slug: Data-Flow-Gap-Analysis
     l4_classification: Partial Uses Coverage Detection
     l5_metric: Data Flow Gap Analysis
     taxonomy_classification: Partial Uses Coverage Detection
@@ -2736,27 +1835,17 @@ techniques:
       python:
         primary: coverage.py + beniget
         secondary: all_uses
-      c:
-        primary: all uses
-        secondary: c-use-analyzer
-      cpp:
-        primary: all uses
-        secondary: c-use-analyzer
-      java:
-        primary: JaCoCo ghost lines + high-mi partial lines
-        secondary: null
-      csharp:
-        primary: all uses
-        secondary: csharp use coverage
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.10
-        secondary: null
-      typescript:
-        primary: ESLint (eslint-scope) + nyc
-        secondary: null
+    emitted_directly: false
+    derivation: partial_uses = len([d for d in definitions if d.user_count == 0])
+      + len(missing_lines)
+    raw_formula: Gap Score = (DU Pairs with no test exercise / Total DU Pairs) × 100
+    expected_threshold: < 35% of DU pairs untested (65% coverage floor)
+    normalisation: MAX(0, 100 – Gap_Score)
+    execution_frequency: Daily / Per Sprint
     source_row: 103
   - metric_code: AMRE
     module_key: ambiguity_resolution
+    branch_slug: Ambiguity-Resolution
     l4_classification: Multiple Definitions Handling
     l5_metric: Ambiguity Resolution
     taxonomy_classification: Multiple Definitions Handling
@@ -2764,27 +1853,19 @@ techniques:
       python:
         primary: coverage.py + beniget
         secondary: all_uses
-      c:
-        primary: all uses
-        secondary: c-use-analyzer
-      cpp:
-        primary: all uses
-        secondary: c-use-analyzer
-      java:
-        primary: JaCoCo branch probes mb/cb
-        secondary: null
-      csharp:
-        primary: all uses
-        secondary: csharp use coverage
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.11
-        secondary: null
-      typescript:
-        primary: ESLint (eslint-scope) + nyc
-        secondary: null
+    emitted_directly: false
+    derivation: multiple_definitions = len([d for d in definitions if d.user_count
+      > 1])
+    raw_formula: Redefinition Coverage % = (Redefined Variables with all active definitions
+      tested / Total Redefined Variables) × 100
+    expected_threshold: '>= 80% of redefined variables tested across all definition
+      states'
+    normalisation: Score = Redefinition Coverage % [gate at 80%]
+    execution_frequency: Daily / Per Sprint
     source_row: 104
   - metric_code: IPT
     module_key: inter_procedural_tracking
+    branch_slug: Inter-Procedural-Tracking
     l4_classification: Cross-Function Use Detection
     l5_metric: Inter-procedural Tracking
     taxonomy_classification: Cross-Function Use Detection
@@ -2792,27 +1873,18 @@ techniques:
       python:
         primary: coverage.py + beniget
         secondary: all_uses
-      c:
-        primary: all uses
-        secondary: N/A
-      cpp:
-        primary: all uses
-        secondary: N/A
-      java:
-        primary: JaCoCo method/class LINE counters + call-stack tests (manual/IT)
-        secondary: null
-      csharp:
-        primary: all uses
-        secondary: csharp use coverage
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.12
-        secondary: null
-      typescript:
-        primary: ESLint (eslint-scope) + nyc
-        secondary: null
+    emitted_directly: false
+    derivation: "cross_function_uses = len([\n    d for d in definitions\n    if len(d.users)\
+      \ > 1\n])"
+    raw_formula: Inter-procedural Coverage % = (Cross-function DU Pairs Exercised
+      / Total Cross-function DU Pairs) × 100
+    expected_threshold: '>= 60% of cross-function DU pairs exercised'
+    normalisation: Score = Inter-procedural Coverage % [gate at 60%]
+    execution_frequency: Daily / Per Sprint
     source_row: 105
   - metric_code: GHID
     module_key: ghost_use_identification
+    branch_slug: Ghost-Use-Identification
     l4_classification: Unreachable Use Detection
     l5_metric: Ghost Use Identification
     taxonomy_classification: Unreachable Use Detection
@@ -2820,27 +1892,17 @@ techniques:
       python:
         primary: coverage.py + beniget
         secondary: all_uses
-      c:
-        primary: all uses
-        secondary: N/A
-      cpp:
-        primary: all uses
-        secondary: N/A
-      java:
-        primary: JaCoCo ghost lines (mi>0, ci=0) + static use map
-        secondary: null
-      csharp:
-        primary: all uses
-        secondary: csharp use coverage
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.13
-        secondary: null
-      typescript:
-        primary: ESLint (eslint-scope) + nyc
-        secondary: null
+    emitted_directly: false
+    derivation: unreachable_uses = len(missing_lines)
+    raw_formula: Ghost Use % = (Uses that can never be reached / Total Declared Uses)
+      × 100
+    expected_threshold: < 2% ghost uses in codebase
+    normalisation: MAX(0, 100 – (Ghost_Use% × 25))
+    execution_frequency: Daily / Per Sprint
     source_row: 106
   - metric_code: DIA
     module_key: data_integrity_audit
+    branch_slug: Data-Integrity-Audit
     l4_classification: Coverage Reporting Validation
     l5_metric: Data Integrity Audit
     taxonomy_classification: Coverage Reporting Validation
@@ -2848,27 +1910,17 @@ techniques:
       python:
         primary: coverage.py + beniget
         secondary: all_uses
-      c:
-        primary: all uses
-        secondary: c-use-analyzer
-      cpp:
-        primary: all uses
-        secondary: c-use-analyzer
-      java:
-        primary: JaCoCo sessioninfo + report metadata + CI SHA (external)
-        secondary: null
-      csharp:
-        primary: all uses
-        secondary: csharp use coverage
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.14
-        secondary: null
-      typescript:
-        primary: ESLint (eslint-scope) + nyc
-        secondary: null
+    emitted_directly: false
+    derivation: coverage_valid = (covered_lines + len(missing_lines)) == num_statements
+    raw_formula: Report Completeness % = (DU pairs with full audit record / Total
+      DU Pairs) × 100
+    expected_threshold: '>= 90% of DU pairs have complete data integrity audit record'
+    normalisation: Score = Report Completeness % [gate at 90%]
+    execution_frequency: Daily / Per Sprint
     source_row: 107
   - metric_code: COVER
     module_key: all_uses_coverage
+    branch_slug: All-Uses-Coverage
     l4_classification: Variable Use Detection
     l5_metric: All-Uses Coverage %
     taxonomy_classification: Variable Use Detection
@@ -2876,24 +1928,13 @@ techniques:
       python:
         primary: coverage.py + beniget
         secondary: all_uses
-      c:
-        primary: all uses
-        secondary: c-use-analyzer
-      cpp:
-        primary: all uses
-        secondary: c-use-analyzer
-      java:
-        primary: Static DU / ba-dua (|U|) + JaCoCo execution witness
-        secondary: null
-      csharp:
-        primary: all uses
-        secondary: csharp use coverage
-      javascript:
-        primary: ESLint (eslint-scope) + nyc v17.1.15
-        secondary: null
-      typescript:
-        primary: ESLint (eslint-scope) + nyc
-        secondary: null
+    emitted_directly: false
+    derivation: "all_uses_coverage_percent = (\n    len([d for d in definitions if\
+      \ d.user_count > 0]) / len(definitions)\n) * 100"
+    raw_formula: All-Uses Coverage % = (Covered DU Pairs / Total DU Pairs) × 100
+    expected_threshold: '>= 65% all-uses coverage'
+    normalisation: Score = All-Uses Coverage %
+    execution_frequency: Daily / Per Sprint
     source_row: 108
 - technique_code: DP
   l2: Development Process Analysis
@@ -2902,6 +1943,7 @@ techniques:
   metrics:
   - metric_code: CCS
     module_key: code_churn_score
+    branch_slug: Code-Churn-Score
     l4_classification: Risk-Based Testing Prioritization
     l5_metric: Code Churn Score
     taxonomy_classification: Risk-Based Testing Prioritization
@@ -2909,27 +1951,17 @@ techniques:
       python:
         primary: pydriller
         secondary: git_churn
-      c:
-        primary: pydriller
-        secondary: git-churn
-      cpp:
-        primary: pydriller
-        secondary: git-churn
-      java:
-        primary: Git (log, numstat) + documented composite proxy
-        secondary: null
-      csharp:
-        primary: pydriller
-        secondary: git log churn
-      javascript:
-        primary: pydriller
-        secondary: null
-      typescript:
-        primary: pydriller
-        secondary: null
+    emitted_directly: true
+    derivation: Code Churn Score = lines
+    raw_formula: Churn = (Lines Added + Lines Deleted) / Total LOC over rolling 30-day
+      window
+    expected_threshold: < 30% churn per sprint; flag modules with > 50%
+    normalisation: MAX(0, 100 – (Churn% × 2))  [50% churn = 0 pts]
+    execution_frequency: Daily
     source_row: 110
   - metric_code: IDV
     module_key: impact_driven_verification
+    branch_slug: Impact-Driven-Verification
     l4_classification: Regression Testing Focus
     l5_metric: Impact-Driven Verification
     taxonomy_classification: Regression Testing Focus
@@ -2937,27 +1969,17 @@ techniques:
       python:
         primary: pydriller
         secondary: git_churn
-      c:
-        primary: pydriller
-        secondary: git-churn
-      cpp:
-        primary: pydriller
-        secondary: git-churn
-      java:
-        primary: Git + JaCoCo jacoco.xml (optional) + diff-coverage (recommended)
-        secondary: null
-      csharp:
-        primary: pydriller
-        secondary: git log churn
-      javascript:
-        primary: pydriller
-        secondary: null
-      typescript:
-        primary: pydriller
-        secondary: null
+    emitted_directly: false
+    derivation: impact_score = (insertions + deletions) / max(files, 1)
+    raw_formula: Regression Coverage % = (High-Churn Modules in Regression Suite /
+      Total High-Churn Modules) × 100
+    expected_threshold: 100% of modules with churn > 30% included in regression suite
+    normalisation: Score = Regression Coverage % [gate at 100%]
+    execution_frequency: Daily
     source_row: 111
   - metric_code: FPM
     module_key: fault_probability_modeling
+    branch_slug: Fault-Probability-Modeling
     l4_classification: Defect Prediction
     l5_metric: Fault Probability Modeling
     taxonomy_classification: Defect Prediction
@@ -2965,27 +1987,17 @@ techniques:
       python:
         primary: pydriller
         secondary: git_churn
-      c:
-        primary: pydriller
-        secondary: git-churn
-      cpp:
-        primary: pydriller
-        secondary: git-churn
-      java:
-        primary: Git history density + optional defect linkage (external)
-        secondary: null
-      csharp:
-        primary: pydriller
-        secondary: git log churn
-      javascript:
-        primary: pydriller
-        secondary: null
-      typescript:
-        primary: pydriller
-        secondary: null
+    emitted_directly: false
+    derivation: fault_probability = (insertions + deletions) * complexity
+    raw_formula: Fault Probability Score = Churn% × Defect_Density (bugs per KLOC)
+      over rolling 30-day window
+    expected_threshold: Fault Probability Score < 5 (Churn% × Defect_Density)
+    normalisation: MAX(0, 100 – (Fault_Probability_Score × 10))
+    execution_frequency: Daily
     source_row: 112
   - metric_code: VSU
     module_key: validation_suite_updates
+    branch_slug: Validation-Suite-Updates
     l4_classification: Test Case Maintenance Identification
     l5_metric: Validation Suite Updates
     taxonomy_classification: Test Case Maintenance Identification
@@ -2993,27 +2005,17 @@ techniques:
       python:
         primary: pydriller
         secondary: git_churn
-      c:
-        primary: pydriller
-        secondary: git-churn
-      cpp:
-        primary: pydriller
-        secondary: git-churn
-      java:
-        primary: Git path analysis (test vs main)
-        secondary: null
-      csharp:
-        primary: pydriller
-        secondary: git log churn
-      javascript:
-        primary: pydriller
-        secondary: null
-      typescript:
-        primary: pydriller
-        secondary: null
+    emitted_directly: true
+    derivation: test_impact_score = files
+    raw_formula: Stale Test % = (Test Files not updated despite source churn > 20%
+      / Total Test Files) × 100
+    expected_threshold: < 5% of test files stale relative to churned source modules
+    normalisation: MAX(0, 100 – (Stale_Test% × 10))
+    execution_frequency: Daily
     source_row: 113
   - metric_code: SEM
     module_key: side_effect_mapping
+    branch_slug: Side-Effect-Mapping
     l4_classification: Change Impact Analysis
     l5_metric: Side Effect Mapping
     taxonomy_classification: Change Impact Analysis
@@ -3021,22 +2023,11 @@ techniques:
       python:
         primary: pydriller
         secondary: git_churn
-      c:
-        primary: pydriller
-        secondary: git-churn
-      cpp:
-        primary: pydriller
-        secondary: git-churn
-      java:
-        primary: Git hotspots + architecture/import tools (manual)
-        secondary: null
-      csharp:
-        primary: pydriller
-        secondary: git log churn
-      javascript:
-        primary: pydriller
-        secondary: null
-      typescript:
-        primary: pydriller
-        secondary: null
+    emitted_directly: false
+    derivation: side_effect_scope = sum(len(file.changed_methods) for file in modified_files)
+    raw_formula: Impact Coverage % = (Affected Downstream Modules Regression-Tested
+      / Total Identified Downstream Modules) × 100
+    expected_threshold: 100% of downstream impacted modules included in test run
+    normalisation: Score = Impact Coverage % [gate at 100%]
+    execution_frequency: Daily
     source_row: 114

@@ -51,6 +51,23 @@ def metric_entry(technique_code, metric_code, registry=None):
     raise KeyError("Unknown metric %s in technique %s" % (metric_code, technique_code))
 
 
+def metric_by_slug(technique_code, branch_slug, registry=None):
+    tech = technique_by_code(technique_code, registry)
+    slug = branch_slug.strip()
+    for m in tech["metrics"]:
+        if m.get("branch_slug") == slug:
+            return m
+    raise KeyError("Unknown branch_slug %r in technique %s" % (branch_slug, technique_code))
+
+
+def metric_by_module_key(technique_code, module_key, registry=None):
+    tech = technique_by_code(technique_code, registry)
+    for m in tech["metrics"]:
+        if m["module_key"] == module_key:
+            return m
+    raise KeyError("Unknown module_key %r in technique %s" % (module_key, technique_code))
+
+
 def all_metric_entries(registry=None):
     reg = registry or load_registry()
     out = []

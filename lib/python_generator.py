@@ -313,13 +313,30 @@ def _tool_configs(branch_type, pkg, primary_tool):
 def generate_branch_files(technique_code, metric_code, branch_type, version="2.6", language="python"):
     if language != "python":
         raise NotImplementedError("language %r not yet implemented for %s" % (language, technique_code))
+    from lib.metrics import branch_name as metrics_branch_name
+
     tech = technique_by_code(technique_code)
     _, metric = metric_entry(technique_code, metric_code)
     pkg = package_name(technique_code)
     variant = VARIANT_MAP[branch_type]
-    n_fn = n_functions(technique_code, metric_code)
     tool = (metric.get("tools") or {}).get("python", {}).get("primary", "")
+    bname = metrics_branch_name(technique_code, metric_code, branch_type, version)
 
+    n_fn = n_functions(technique_code, metric_code)
+    files = None
+    loc = 0
+    while n_fn <= 96:
+        files = _assemble_files(tech, metric, technique_code, metric_code, pkg, variant, n_fn, tool, branch_type, version, language)
+        loc = _count_loc(files, pkg)
+        if loc >= MIN_LOC:
+            break
+        n_fn += 4
+    if loc < MIN_LOC:
+        raise ValueError("Generated %s has only %d LOC (need >= %d)" % (bname, loc, MIN_LOC))
+    return files
+
+
+def _assemble_files(tech, metric, technique_code, metric_code, pkg, variant, n_fn, tool, branch_type, version, language):
     files = {}
     files["%s/__init__.py" % pkg] = _gen_init(pkg, tech["l2"], version)
     files["%s/config.py" % pkg] = _gen_config(tech, metric, branch_type, version, language, pkg)
@@ -339,28 +356,24 @@ def generate_branch_files(technique_code, metric_code, branch_type, version="2.6
             files[rel] = _gen_stub(m["module_key"], m["l5_metric"], tech["l3"], mtool)
 
     files["main.py"] = _gen_main(pkg, metric["metric_code"], metric["module_key"], n_fn)
-    files["README.md"] = "# %s_%s_%s_%s\n\n%s / %s\n" % (
-        technique_code, metric_code, branch_type, version, tech["l2"], metric["l5_metric"])
+    from lib.metrics import branch_name as metrics_branch_name
+    bname = metrics_branch_name(technique_code, metric_code, branch_type, version)
+    files["README.md"] = "# %s\n\n%s / %s\n" % (bname, tech["l2"], metric["l5_metric"])
     files["requirements.txt"] = _requirements_extra(technique_code, variant)
     files.update(_tool_configs(branch_type, pkg, tool))
     if technique_code.upper() == "DP":
         files.update(_churn_meta(metric, variant))
-
     files.update(_gen_tests(pkg, metric, branch_type, n_fn))
-
     for path, content in files.items():
         if path.endswith(".py"):
             _assert_no_forbidden(content, path)
-
-    loc = _count_loc(files, pkg)
-    bname = "%s_%s_%s_%s" % (technique_code, metric_code, branch_type, version)
-    if loc < MIN_LOC:
-        raise ValueError("Generated %s has only %d LOC (need >= %d)" % (bname, loc, MIN_LOC))
     return files
 
 
 def write_branch(root, technique_code, metric_code, branch_type, version="2.6", language="python"):
     import shutil
+    from lib.metrics import branch_name as metrics_branch_name
+
     files = generate_branch_files(technique_code, metric_code, branch_type, version, language)
     if os.path.isdir(root):
         shutil.rmtree(root)
@@ -374,5 +387,5 @@ def write_branch(root, technique_code, metric_code, branch_type, version="2.6", 
             fh.write(content)
     pkg = package_name(technique_code)
     loc = _count_loc(files, pkg)
-    bname = "%s_%s_%s_%s" % (technique_code, metric_code, branch_type, version)
+    bname = metrics_branch_name(technique_code, metric_code, branch_type, version)
     return bname, loc

@@ -610,7 +610,8 @@ def verify_taxonomy_dir(batch_dir):
 
 
 def run_taxonomy_batch(env_file=None, branches_csv=None, dry_run=False, refresh_branches=False,
-                       allow_partial_branches=False, export_html=True, html_only=True):
+                       allow_partial_branches=False, export_html=True, html_only=True,
+                       progress_callback=None):
     """Notebook-friendly wrapper. Returns (exit_code, batch_output_dir)."""
     env_file = env_file or os.path.join(ROOT, ".env.local")
     load_env(env_file)
@@ -627,11 +628,15 @@ def run_taxonomy_batch(env_file=None, branches_csv=None, dry_run=False, refresh_
         export_html=export_html,
         html_only=html_only,
     )
-    return main_with_args(args)
+    return main_with_args(args, progress_callback=progress_callback)
 
 
-def main_with_args(args):
+def main_with_args(args, progress_callback=None):
     """Core batch logic extracted for programmatic use."""
+    def _progress(phase, current, total, branch, message):
+        if progress_callback:
+            progress_callback(phase, current, total, branch, message)
+
     load_env(args.env_file)
     identity_url = os.environ.get("IDENTITY_URL", "http://localhost:8000")
     runtime_url = os.environ.get("RUNTIME_URL", "http://localhost:8002")
@@ -656,6 +661,7 @@ def main_with_args(args):
     prefer_github_commit = os.environ.get("PREFER_GITHUB_COMMIT", "true").lower() == "true"
 
     print("=== Authenticate ===", flush=True)
+    _progress("auth", 0, 1, "", "authenticating")
     if args.skip_login:
         token = os.environ.get("SESSION_TOKEN")
         if not token:
@@ -669,6 +675,7 @@ def main_with_args(args):
             dev_verify(identity_url, email)
         token = login(identity_url, email, password)
         print("  logged in as %s" % email, flush=True)
+    _progress("auth", 1, 1, "", "authenticated")
 
     client = PlatformClient(identity_url, runtime_url, views_url, token)
     env_tenant_id = tenant_id
@@ -688,6 +695,7 @@ def main_with_args(args):
         ensure_project(client, os.environ.get("PROJECT_NAME", "Metric Evaluation SA"), clone_url, branches[0])
 
     print("\n=== Resolve catalog ===")
+    _progress("catalog", 0, 1, "", "resolving catalog")
     catalog = resolve_catalog(client, project_id, repository_match)
     if args.refresh_branches:
         print("  refreshing branch catalog...")
@@ -710,6 +718,7 @@ def main_with_args(args):
     if not branches:
         print("ERROR: no branches available", file=sys.stderr)
         return 1, None
+    _progress("catalog", 1, 1, "", "%d branches ready" % len(branches))
     if args.dry_run:
         print("\nDry run complete.")
         classification = os.environ.get("REPORT_CLASSIFICATION", SA_TESTING_TYPE)
@@ -732,8 +741,10 @@ def main_with_args(args):
     }
 
     print("\n=== Sequential branch runs ===")
+    total_branches = len(branches)
     for idx, branch_name in enumerate(branches, start=1):
-        print("\n[%d/%d] %s" % (idx, len(branches), branch_name))
+        print("\n[%d/%d] %s" % (idx, total_branches, branch_name))
+        _progress("whitebox", idx - 1, total_branches, branch_name, "starting")
         branch = catalog["branches"][branch_name]
         branch_id = branch.get("id") or branch.get("branch_id")
         if idx > 1 and branch_delay_sec > 0:
@@ -763,9 +774,11 @@ def main_with_args(args):
                 "gate_score": extract_gate_score(taxonomy_json),
             })
             print("  saved to %s" % os.path.join(output_dir, report_folder))
+            _progress("whitebox", idx, total_branches, branch_name, "saved run %s" % run_id)
         except Exception as exc:
             print("  FAILED: %s" % exc)
             manifest["runs"].append({"branch": branch_name, "error": str(exc)})
+            _progress("whitebox", idx, total_branches, branch_name, "failed: %s" % exc)
             if not continue_on_failure:
                 break
 
@@ -775,11 +788,14 @@ def main_with_args(args):
 
     successful = [r for r in manifest["runs"] if r.get("run_id")]
     if args.export_html and successful:
+        _progress("export", 0, 1, "", "exporting taxonomy HTML")
         if export_html_reports(output_dir) and args.html_only:
             prune_to_html_only(output_dir)
+        _progress("export", 1, 1, "", "HTML export complete")
 
     print("\n=== Done ===")
     print("Reports: %s" % output_dir)
+    _progress("done", total_branches, total_branches, "", "%d/%d runs saved" % (len(successful), total_branches))
     if not successful:
         return 1, output_dir
     failed = [r for r in manifest["runs"] if r.get("error")]

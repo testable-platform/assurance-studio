@@ -137,6 +137,35 @@ def dev_verify(identity_url, email):
         pass
 
 
+def verify_login(env_file=None, email=None, password=None):
+    """Validate Testable credentials; returns (ok, message). Never returns password."""
+    env_file = env_file or os.path.join(ROOT, ".env.local")
+    load_env(env_file)
+    identity_url = os.environ.get("IDENTITY_URL", "http://localhost:8000")
+    runtime_url = os.environ.get("RUNTIME_URL", "http://localhost:8002")
+    views_url = os.environ.get("VIEWS_URL", "http://localhost:8003")
+    use_env = email is None and password is None
+    if email is None:
+        email = os.environ.get("AUTH_EMAIL", "")
+    if password is None:
+        password = os.environ.get("AUTH_PASSWORD", "")
+    email = (email or "").strip()
+    password = password or ""
+    if not email or not password:
+        if use_env:
+            return False, "email and password required (UI or .env.local)"
+        return False, "email and password required"
+    try:
+        if "localhost" in identity_url or "127.0.0.1" in identity_url:
+            dev_verify(identity_url, email)
+        token = login(identity_url, email, password)
+        client = PlatformClient(identity_url, runtime_url, views_url, token)
+        tenant_id = resolve_tenant_id(client)
+        return True, "logged in as %s (tenant %s)" % (email, tenant_id)
+    except Exception as exc:
+        return False, str(exc)
+
+
 def github_tip_sha(branch_name, repository_match):
     repo = repository_match.strip().strip("/")
     if repo.endswith(".git"):
@@ -221,7 +250,14 @@ def refresh_branches(client, repository_id):
     return client.post_json(url, {})
 
 
-def wait_for_branches(client, repository_id, required_names, poll_interval=10, timeout_sec=300):
+def wait_for_branches(
+    client,
+    repository_id,
+    required_names,
+    poll_interval=10,
+    timeout_sec=300,
+    allow_partial=False,
+):
     started = time.time()
     branch_map = {}
     while time.time() - started < timeout_sec:
@@ -237,6 +273,15 @@ def wait_for_branches(client, repository_id, required_names, poll_interval=10, t
         missing = [n for n in required_names if n not in branch_map]
         if not missing:
             return branch_map
+        if allow_partial:
+            found = [n for n in required_names if n in branch_map]
+            if found:
+                print(
+                    "  partial catalog: %d/%d branches ready (missing: %s)"
+                    % (len(found), len(required_names), missing),
+                    flush=True,
+                )
+                return branch_map
         print("  waiting for branches (missing: %s)..." % missing, flush=True)
         time.sleep(poll_interval)
     return branch_map
@@ -611,7 +656,7 @@ def verify_taxonomy_dir(batch_dir):
 
 def run_taxonomy_batch(env_file=None, branches_csv=None, dry_run=False, refresh_branches=False,
                        allow_partial_branches=False, export_html=True, html_only=True,
-                       progress_callback=None):
+                       auth_email=None, auth_password=None, progress_callback=None):
     """Notebook-friendly wrapper. Returns (exit_code, batch_output_dir)."""
     env_file = env_file or os.path.join(ROOT, ".env.local")
     load_env(env_file)
@@ -627,6 +672,8 @@ def run_taxonomy_batch(env_file=None, branches_csv=None, dry_run=False, refresh_
         allow_partial_branches=allow_partial_branches,
         export_html=export_html,
         html_only=html_only,
+        auth_email=auth_email,
+        auth_password=auth_password,
     )
     return main_with_args(args, progress_callback=progress_callback)
 
@@ -641,8 +688,16 @@ def main_with_args(args, progress_callback=None):
     identity_url = os.environ.get("IDENTITY_URL", "http://localhost:8000")
     runtime_url = os.environ.get("RUNTIME_URL", "http://localhost:8002")
     views_url = os.environ.get("VIEWS_URL", "http://localhost:8003")
-    email = os.environ.get("AUTH_EMAIL")
-    password = os.environ.get("AUTH_PASSWORD")
+    email = getattr(args, "auth_email", None)
+    password = getattr(args, "auth_password", None)
+    use_env_auth = email is None and password is None
+    if email is None:
+        email = os.environ.get("AUTH_EMAIL")
+    if password is None:
+        password = os.environ.get("AUTH_PASSWORD")
+    if not use_env_auth and (not (email or "").strip() or not password):
+        print("ERROR: UI auth_email/auth_password required when overriding .env.local", file=sys.stderr)
+        return 1, None
     tenant_id = os.environ.get("TENANT_ID")
     project_id = os.environ.get("PROJECT_ID") or None
     repository_match = os.environ.get("REPOSITORY_MATCH", "Mohammed-shihaf/Metric_eveluation")
@@ -696,14 +751,39 @@ def main_with_args(args, progress_callback=None):
 
     print("\n=== Resolve catalog ===")
     _progress("catalog", 0, 1, "", "resolving catalog")
-    catalog = resolve_catalog(client, project_id, repository_match)
+    try:
+        catalog = resolve_catalog(client, project_id, repository_match)
+    except RuntimeError as exc:
+        if "No projects found" not in str(exc):
+            raise
+        clone_url = os.environ.get("CLONE_URL", "https://github.com/%s.git" % repository_match)
+        default_branch = branches[0] if branches else "main"
+        print("  no projects for this tenant — provisioning catalog project...", flush=True)
+        ensure_project(
+            client,
+            os.environ.get("PROJECT_NAME", "Metric Evaluation SA"),
+            clone_url,
+            default_branch,
+        )
+        catalog = resolve_catalog(client, project_id, repository_match)
     if args.refresh_branches:
         print("  refreshing branch catalog...")
         try:
             refresh_branches(client, catalog["repository_id"])
         except Exception as exc:
             print("  refresh trigger: %s" % exc)
-        catalog["branches"] = wait_for_branches(client, catalog["repository_id"], branches)
+        sync_timeout = int(os.environ.get("PARTIAL_BRANCH_SYNC_SEC", "60"))
+        if args.allow_partial_branches:
+            sync_timeout = min(sync_timeout, int(os.environ.get("BRANCH_SYNC_TIMEOUT_SEC", "60")))
+        else:
+            sync_timeout = int(os.environ.get("BRANCH_SYNC_TIMEOUT_SEC", "300"))
+        catalog["branches"] = wait_for_branches(
+            client,
+            catalog["repository_id"],
+            branches,
+            timeout_sec=sync_timeout,
+            allow_partial=args.allow_partial_branches,
+        )
     print("  project: %s (%s)" % (catalog.get("project_name"), catalog["project_id"]))
     print("  repository: %s (%s)" % (catalog.get("repository_label"), catalog["repository_id"]))
 

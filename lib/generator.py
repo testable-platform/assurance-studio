@@ -160,7 +160,42 @@ def create_git_branches(
 
 
 def push_branches(branch_names, repo_root=None):
+    """Push branches to origin. Returns (pushed_names, errors)."""
     import subprocess
+
     root = repo_root or os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    pushed = []
+    errors = []
     for name in branch_names:
-        subprocess.check_call(["git", "push", "-u", "origin", name, "--force"], cwd=root)
+        try:
+            subprocess.check_call(
+                ["git", "push", "-u", "origin", name, "--force"],
+                cwd=root,
+            )
+            pushed.append(name)
+        except subprocess.CalledProcessError as exc:
+            errors.append({"branch": name, "error": "git push failed: %s" % exc})
+    return pushed, errors
+
+
+def remote_branch_status(branch_names, repo_root=None):
+    """Check whether each branch exists on origin. Returns {name: {pushed, sha}}."""
+    import subprocess
+
+    root = repo_root or os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    status = {}
+    for name in branch_names:
+        try:
+            out = subprocess.check_output(
+                ["git", "ls-remote", "--heads", "origin", name],
+                cwd=root,
+                stderr=subprocess.DEVNULL,
+            )
+            line = out.decode("utf-8", "replace").strip()
+            if line:
+                status[name] = {"pushed": True, "sha": line.split()[0][:12]}
+            else:
+                status[name] = {"pushed": False, "sha": None}
+        except subprocess.CalledProcessError:
+            status[name] = {"pushed": False, "sha": None}
+    return status

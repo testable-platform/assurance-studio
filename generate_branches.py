@@ -56,7 +56,11 @@ def main():
     if args.git:
         create_git_branches(args.techniques, args.metrics, types, args.version, args.language, ROOT, args.out)
         if args.push:
-            push_branches(names, ROOT)
+            pushed, push_errors = push_branches(names, ROOT)
+            if push_errors:
+                for err in push_errors:
+                    print("  push %s: %s" % (err["branch"], err["error"]), file=sys.stderr)
+                return 1
     return 0
 
 

@@ -22,7 +22,7 @@ TESTABLE_REQUIRED = (
 )
 
 TESTABLE_OPTIONAL = (
-    ("REPOSITORY_MATCH", "GitHub repo slug for catalog match / default push target"),
+    ("REPOSITORY_MATCH", "Optional CLI/notebook catalog repo slug (UI uses per-user OAuth selection)"),
     ("GITHUB_OAUTH_CLIENT_ID", "GitHub OAuth App client ID"),
     ("GITHUB_OAUTH_CLIENT_SECRET", "GitHub OAuth App client secret"),
     ("GITHUB_OAUTH_REDIRECT_URI", "OAuth callback URL (Streamlit app root)"),

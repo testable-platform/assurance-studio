@@ -201,11 +201,18 @@ def resolve_commit_sha(branch_name, branch_row, repository_match, prefer_github=
         return sha
     # Fallback: local git ls-remote (works when repo is cloned and remote configured)
     try:
+        _git_env = dict(os.environ)
+        _git_env.update({
+            "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "Never",
+            "GIT_ASKPASS": "echo", "SSH_ASKPASS": "echo",
+        })
         proc = subprocess.Popen(
-            ["git", "ls-remote", "origin", "refs/heads/%s" % branch_name],
+            ["git", "-c", "credential.helper=", "ls-remote", "origin",
+             "refs/heads/%s" % branch_name],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=ROOT,
+            env=_git_env,
         )
         out, _ = proc.communicate(timeout=30)
         line = out.decode("utf-8", errors="replace").strip().splitlines()
@@ -656,7 +663,8 @@ def verify_taxonomy_dir(batch_dir):
 
 def run_taxonomy_batch(env_file=None, branches_csv=None, dry_run=False, refresh_branches=False,
                        allow_partial_branches=False, export_html=True, html_only=True,
-                       auth_email=None, auth_password=None, progress_callback=None):
+                       auth_email=None, auth_password=None, repository_match=None,
+                       progress_callback=None, result_meta=None):
     """Notebook-friendly wrapper. Returns (exit_code, batch_output_dir)."""
     env_file = env_file or os.path.join(ROOT, ".env.local")
     load_env(env_file)
@@ -674,11 +682,12 @@ def run_taxonomy_batch(env_file=None, branches_csv=None, dry_run=False, refresh_
         html_only=html_only,
         auth_email=auth_email,
         auth_password=auth_password,
+        repository_match=repository_match,
     )
-    return main_with_args(args, progress_callback=progress_callback)
+    return main_with_args(args, progress_callback=progress_callback, result_meta=result_meta)
 
 
-def main_with_args(args, progress_callback=None):
+def main_with_args(args, progress_callback=None, result_meta=None):
     """Core batch logic extracted for programmatic use."""
     def _progress(phase, current, total, branch, message):
         if progress_callback:
@@ -700,7 +709,17 @@ def main_with_args(args, progress_callback=None):
         return 1, None
     tenant_id = os.environ.get("TENANT_ID")
     project_id = os.environ.get("PROJECT_ID") or None
-    repository_match = os.environ.get("REPOSITORY_MATCH", "Mohammed-shihaf/Metric_eveluation")
+    repository_match = (
+        getattr(args, "repository_match", None)
+        or os.environ.get("REPOSITORY_MATCH", "")
+    ).strip()
+    if not repository_match:
+        print(
+            "ERROR: repository_match required — select a GitHub repo in the UI "
+            "or set REPOSITORY_MATCH for CLI/notebook runs.",
+            file=sys.stderr,
+        )
+        return 1, None
     branches = (args.branches or os.environ.get(
         "BRANCHES", "SA_bug_2.6,SA_bugFX_2.6,SA_TCC_2.6,SA_CC_2.6")).split(",")
     branches = [b.strip() for b in branches if b.strip()]
@@ -788,6 +807,9 @@ def main_with_args(args, progress_callback=None):
     print("  repository: %s (%s)" % (catalog.get("repository_label"), catalog["repository_id"]))
 
     missing = [b for b in branches if b not in catalog["branches"]]
+    catalog_skipped = list(missing)
+    if result_meta is not None:
+        result_meta["catalog_skipped"] = catalog_skipped
     if missing:
         if args.allow_partial_branches:
             print("  WARNING: skipping missing branches: %s" % missing)
@@ -817,6 +839,7 @@ def main_with_args(args, progress_callback=None):
         "repository": catalog.get("repository_label"),
         "project_id": catalog["project_id"],
         "repository_id": catalog["repository_id"],
+        "catalog_skipped": catalog_skipped,
         "runs": [],
     }
 

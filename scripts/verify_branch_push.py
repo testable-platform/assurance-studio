@@ -21,7 +21,6 @@ def _github_config():
         load_env(env_path)
 
     token = os.environ.get("GITHUB_TOKEN", "").strip()
-    repo = os.environ.get("REPOSITORY_MATCH", "").strip()
     db = os.environ.get("SCM_DB_PATH", "scm_connections.db")
     db_path = db if os.path.isabs(db) else os.path.join(ROOT, db)
 
@@ -47,7 +46,7 @@ def _github_config():
                 scm_slug = (scm.repo_slug or "").strip()
                 scm_login = scm.provider_username or ""
 
-    slug = (scm_slug or repo or "").strip()
+    slug = scm_slug.strip()
     if token and slug:
         return {
             "token": token,
@@ -73,35 +72,31 @@ def _github_config():
             from lib.scm.store import get_connection
 
             scm = get_connection(row[0])
-            if scm and scm.access_token:
-                slug = (scm.repo_slug or repo or "").strip()
-                if slug:
-                    return {
-                        "token": scm.access_token,
-                        "repo_slug": slug,
-                        "login": scm.provider_username or "",
-                        "default_branch": "main",
-                        "push_method": "oauth",
-                    }
+            if scm and scm.access_token and (scm.repo_slug or "").strip():
+                return {
+                    "token": scm.access_token,
+                    "repo_slug": scm.repo_slug.strip(),
+                    "login": scm.provider_username or "",
+                    "default_branch": "main",
+                    "push_method": "oauth",
+                }
 
-    if token and repo:
-        return {
-            "token": token,
-            "repo_slug": repo,
-            "login": "",
-            "default_branch": "main",
-            "push_method": "pat",
-        }
     return None
 
 
 def main():
     cfg = _github_config()
     if not cfg:
-        print("VERIFY: no GitHub config (.env.local PAT or scm_connections.db)")
+        print(
+            "VERIFY: no GitHub config — connect GitHub in the UI and select a repo, "
+            "or set GITHUB_TOKEN + pick a repo via OAuth (stored in scm_connections.db)."
+        )
         return 1
 
-    print("VERIFY: repo=%s login=%s" % (cfg["repo_slug"], cfg.get("login") or "(pat)"))
+    print(
+        "VERIFY: repo=%s login=%s method=%s"
+        % (cfg["repo_slug"], cfg.get("login") or "(pat)", cfg.get("push_method", "?"))
+    )
 
     types = ["Bug", "BugFX", "TCC", "CC"]
     result = process_branches_sequentially(
@@ -118,7 +113,8 @@ def main():
 
     print("success:", result.get("success"))
     print("stopped_at:", result.get("stopped_at"))
-    print("stop_reason:", result.get("stop_reason"))
+    reason = result.get("stop_reason") or ""
+    print("stop_reason:", reason.encode("ascii", "replace").decode())
     for row in result.get("rows", []):
         detail = (row.get("failure_reason") or row.get("messages") or "")[:120]
         print(

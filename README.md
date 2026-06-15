@@ -44,9 +44,11 @@ Same flow as Testable SCM integrations (`ai-testable-platform`):
 
 Token refresh for `ghu_…` user tokens is automatic.
 
-Optional: `REPOSITORY_MATCH` pre-selects a repo in the picker.
+**Multi-user:** Each QA user picks their own GitHub repository in the app. The selection is stored per user in `scm_connections.db` (keyed by `AUTH_EMAIL` / session email). Branch push and whitebox use that repo — not a shared `REPOSITORY_MATCH`.
 
-Legacy dev fallback: `GITHUB_TOKEN` + `REPOSITORY_MATCH` (PAT) still works if OAuth is not configured.
+Optional server PAT: set `GITHUB_TOKEN` in `.env.local` for push (all users). OAuth is still required so each user can select their target repo.
+
+Optional CLI only: `REPOSITORY_MATCH` in `.env.local` for notebook/CLI whitebox runs when not using the UI.
 
 ## Local tools — isolated throwaway session
 

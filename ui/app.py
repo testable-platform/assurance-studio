@@ -192,14 +192,14 @@ def _ensure_oauth_authorize_url(app_user, login_hint=None):
 
 
 def _resolved_repo_slug():
-    """Target repo from session, OAuth DB, or REPOSITORY_MATCH."""
+    """Per-user target repo from Streamlit session or SCM connection DB only."""
     repo_slug = st.session_state.get("github_repo_slug", "").strip()
     app_user = _app_user_email()
     if app_user:
         conn = _oauth_connection(app_user)
         if conn:
             repo_slug = repo_slug or (conn.repo_slug or "").strip()
-    return repo_slug or os.environ.get("REPOSITORY_MATCH", "").strip()
+    return repo_slug
 
 
 def _sync_github_session_from_db():
@@ -271,14 +271,6 @@ def _github_push_config():
     session = _github_session()
     if session:
         return session
-    if pat and os.environ.get("REPOSITORY_MATCH", "").strip():
-        return {
-            "token": pat,
-            "repo_slug": os.environ.get("REPOSITORY_MATCH", "").strip(),
-            "login": "",
-            "default_branch": "main",
-            "push_method": "pat",
-        }
     return None
 
 
@@ -332,17 +324,11 @@ def _github_creds_ready():
 
 
 def _github_repo_for_links():
-    cfg = _github_push_config()
-    if cfg and cfg.get("repo_slug"):
-        return cfg["repo_slug"]
-    return os.environ.get("REPOSITORY_MATCH", "")
+    return _resolved_repo_slug()
 
 
 def _active_repo_slug():
-    session = _github_session()
-    if session and session.get("repo_slug"):
-        return session["repo_slug"].strip()
-    return os.environ.get("REPOSITORY_MATCH", "").strip()
+    return _resolved_repo_slug()
 
 
 def _reset_session_pipeline_state():
@@ -360,11 +346,11 @@ def _reset_session_pipeline_state():
 
 
 def _sync_repo_artifacts(show_notice=True):
-    """Clear stale proofs/taxonomy/S3 when the active GitHub repo changes."""
+    """Clear stale proofs/taxonomy/S3 when this user's GitHub repo changes."""
     repo = _active_repo_slug()
     if not repo:
         return None
-    result = ensure_repo_aligned(repo, root=str(ROOT))
+    result = ensure_repo_aligned(repo, root=str(ROOT), app_user=_app_user_email())
     if result.get("changed"):
         _reset_session_pipeline_state()
         if show_notice and "repo_switch_notice" not in st.session_state:
@@ -615,10 +601,11 @@ def _scm_repo_picker_view():
 
     labels = []
     repo_by_label = {}
+    conn = _oauth_connection(app_user)
     default_repo = (
-        st.session_state.get("github_repo_slug", "")
-        or os.environ.get("REPOSITORY_MATCH", "")
-    ).strip()
+        st.session_state.get("github_repo_slug", "").strip()
+        or ((conn.repo_slug or "").strip() if conn else "")
+    )
     default_index = 0
     for idx, repo in enumerate(repos):
         label = "%s%s" % (repo["full_name"], " (private)" if repo.get("private") else "")
@@ -708,10 +695,11 @@ def _github_connect_oauth():
             return
 
     env_token = os.environ.get("GITHUB_TOKEN", "").strip()
-    env_repo = os.environ.get("REPOSITORY_MATCH", "").strip()
-    if env_token and env_repo and not _oauth_service().is_configured():
-        st.success("GitHub configured via .env.local PAT → `%s`" % env_repo)
-        return
+    if env_token and not _oauth_service().is_configured():
+        st.info(
+            "Server PAT is configured. Connect GitHub below so each user can pick their own "
+            "target repository."
+        )
 
     st.subheader("Connect to GitHub")
     svc = _oauth_service()
@@ -1170,15 +1158,15 @@ def _tab_whitebox(filters):
             return
         with RunPanel("Whitebox QA") as panel:
             gh_repo = _github_repo_for_links()
-            old_repo = os.environ.get("REPOSITORY_MATCH")
+            if not gh_repo:
+                st.error("Select a GitHub repository on the Branches tab before running whitebox.")
+                return
             old_partial_sync = os.environ.get("PARTIAL_BRANCH_SYNC_SEC")
             old_branch_sync = os.environ.get("BRANCH_SYNC_TIMEOUT_SEC")
             os.environ["PARTIAL_BRANCH_SYNC_SEC"] = str(int(catalog_wait))
             if not allow_partial:
                 os.environ["BRANCH_SYNC_TIMEOUT_SEC"] = str(max(int(catalog_wait), 300))
             batch_meta = {}
-            if gh_repo:
-                os.environ["REPOSITORY_MATCH"] = gh_repo
             try:
                 with panel.stdout_redirect():
                     rc, batch_dir = run_taxonomy_batch(
@@ -1191,14 +1179,11 @@ def _tab_whitebox(filters):
                         html_only=False,
                         auth_email=email_for_auth,
                         auth_password=password_for_auth,
+                        repository_match=gh_repo,
                         progress_callback=panel.progress,
                         result_meta=batch_meta,
                     )
             finally:
-                if old_repo is not None:
-                    os.environ["REPOSITORY_MATCH"] = old_repo
-                elif gh_repo:
-                    os.environ.pop("REPOSITORY_MATCH", None)
                 if old_partial_sync is not None:
                     os.environ["PARTIAL_BRANCH_SYNC_SEC"] = old_partial_sync
                 else:

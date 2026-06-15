@@ -4,4 +4,11 @@ __pycache__/
 *.pyo
 .env
 .env.local
+.sonar_token
+.sonar_admin_pwd
+**/.scannerwork/
 taxonomy_reports/
+proofs/
+s3_downloads/
+.pipeline_repo.json
+scm_connections.db

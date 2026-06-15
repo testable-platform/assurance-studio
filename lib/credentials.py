@@ -22,7 +22,13 @@ TESTABLE_REQUIRED = (
 )
 
 TESTABLE_OPTIONAL = (
-    ("REPOSITORY_MATCH", "GitHub repo slug for catalog match"),
+    ("REPOSITORY_MATCH", "GitHub repo slug for catalog match / default push target"),
+    ("GITHUB_OAUTH_CLIENT_ID", "GitHub OAuth App client ID"),
+    ("GITHUB_OAUTH_CLIENT_SECRET", "GitHub OAuth App client secret"),
+    ("GITHUB_OAUTH_REDIRECT_URI", "OAuth callback URL (Streamlit app root)"),
+    ("SCM_TOKEN_SECRET", "Fernet secret for encrypted SCM tokens at rest"),
+    ("SCM_DB_PATH", "SQLite path for SCM connections (default: scm_connections.db)"),
+    ("GITHUB_TOKEN", "GitHub PAT fallback (optional if OAuth configured)"),
     ("PROJECT_ID", "Project UUID (auto-resolved if empty)"),
     ("TENANT_ID", "Tenant UUID (auto-resolved from session)"),
     ("OUTPUT_DIR", "Taxonomy report root (default: taxonomy_reports)"),

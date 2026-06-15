@@ -10,7 +10,7 @@ import tempfile
 
 from lib.branch_asserts import assert_branch_full
 from lib.github_api import push_branch_to_github
-from lib.github_auth import check_repo_access, verify_git_write_access
+from lib.github_auth import check_app_repo_access
 from lib.python_generator import generate_branch_files, write_branch
 from lib.registry import iter_branches
 from lib.tool_map import pip_packages_for_family, python_tool
@@ -110,6 +110,7 @@ def process_branches_sequentially(
             "stopped_at": None,
             "stop_reason": "GitHub not configured",
             "success": False,
+            "needs_install": False,
             "total": 0,
         }
 
@@ -118,7 +119,7 @@ def process_branches_sequentially(
     base_branch = (github_config.get("default_branch") or "main").strip() or "main"
     push_login = github_config.get("login", "")
 
-    ok, access_msg, _ = check_repo_access(token, repo_slug)
+    ok, needs_install, access_msg = check_app_repo_access(token, repo_slug)
     if not ok:
         return {
             "rows": [],
@@ -126,16 +127,7 @@ def process_branches_sequentially(
             "stopped_at": None,
             "stop_reason": access_msg,
             "success": False,
-            "total": 0,
-        }
-    ok, write_msg, _ = verify_git_write_access(token, repo_slug, base_branch)
-    if not ok:
-        return {
-            "rows": [],
-            "completed": [],
-            "stopped_at": None,
-            "stop_reason": write_msg,
-            "success": False,
+            "needs_install": needs_install,
             "total": 0,
         }
 
@@ -229,5 +221,6 @@ def process_branches_sequentially(
         "stopped_at": stopped_at,
         "stop_reason": stop_reason,
         "success": stopped_at is None and len(completed) == total,
+        "needs_install": False,
         "total": total,
     }

@@ -286,6 +286,25 @@ def _github_install_prompt(repo_slug, detail=None):
     )
 
 
+def _recheck_github_access():
+    """Re-run install/write checks and refresh session flags."""
+    cfg = _github_push_config()
+    if not cfg or not cfg.get("token") or not cfg.get("repo_slug"):
+        st.session_state["github_needs_install"] = False
+        st.session_state.pop("github_access_detail", None)
+        return False, "GitHub is not fully configured."
+
+    access_ok, needs_install, access_detail = check_app_repo_access(
+        cfg["token"],
+        cfg["repo_slug"],
+    )
+    st.session_state["github_needs_install"] = needs_install and not access_ok
+    st.session_state["github_access_detail"] = (
+        access_detail if (needs_install and not access_ok) else ""
+    )
+    return access_ok, access_detail
+
+
 def _github_creds_ready():
     return _github_push_config() is not None
 
@@ -822,6 +841,8 @@ def _tab_branches(filters):
     _github_connect_oauth()
 
     github_ready = _github_creds_ready()
+    needs_install = bool(st.session_state.get("github_needs_install"))
+    repo_slug = st.session_state.get("github_repo_slug", "")
     if not github_ready:
         if st.session_state.get("github_login_ok") and not st.session_state.get("github_repo_slug"):
             st.warning(
@@ -836,12 +857,28 @@ def _tab_branches(filters):
     else:
         cfg = _github_push_config()
         login = cfg.get("login") or "configured account"
+        repo_slug = cfg.get("repo_slug", "—")
         st.caption(
             "Branches are generated **in memory**, validated in a throwaway temp dir, then pushed "
             "directly to **%s** via the GitHub API as **%s** — one branch at a time, nothing "
             "written to build/."
-            % (cfg.get("repo_slug", "—"), login)
+            % (repo_slug, login)
         )
+        if needs_install:
+            _github_install_prompt(
+                repo_slug,
+                st.session_state.get("github_access_detail")
+                or "Install the GitHub App on this repository before generating branches.",
+            )
+            if st.button("Re-check GitHub access", key="recheck_github_access_branches", width="stretch"):
+                with st.spinner("Checking GitHub App install and write access…"):
+                    access_ok, access_detail = _recheck_github_access()
+                if access_ok:
+                    st.success("GitHub App has read/write access — you can generate branches now.")
+                    st.session_state.pop("push_status_cache", None)
+                else:
+                    st.warning(access_detail or "GitHub App still cannot write to this repository.")
+                st.rerun()
 
     max_fix_attempts = st.number_input(
         "Max fix attempts per branch",
@@ -860,7 +897,7 @@ def _tab_branches(filters):
         "Generate + validate + push to GitHub",
         type="primary",
         width="stretch",
-        disabled=not github_ready,
+        disabled=not github_ready or needs_install,
     ):
         with RunPanel("Processing %d branches sequentially" % total) as panel:
             with panel.stdout_redirect():
@@ -924,11 +961,34 @@ def _tab_branches(filters):
                     )
                 else:
                     st.caption("No branches were pushed for the failed branch.")
-                if "Git Data API" in reason or "not accessible" in reason.lower():
+                if result.get("needs_install"):
+                    _github_install_prompt(repo_slug, reason)
+                    if st.button("Re-check GitHub access", key="recheck_after_pipeline_stop"):
+                        with st.spinner("Checking GitHub App install and write access…"):
+                            access_ok, access_detail = _recheck_github_access()
+                        if access_ok:
+                            st.success("GitHub App has read/write access — try generating again.")
+                        else:
+                            st.warning(access_detail or "GitHub App still cannot write to this repository.")
+                        st.rerun()
+                elif "Git Data API" in reason or "not accessible" in reason.lower():
                     st.info(
                         "Disconnect GitHub on the Branches tab, create a new token with write access, "
                         "then reconnect before re-running."
                     )
+            elif result.get("stop_reason"):
+                reason = result.get("stop_reason", "branch pipeline failed")
+                st.error(reason)
+                if result.get("needs_install"):
+                    _github_install_prompt(repo_slug, reason)
+                    if st.button("Re-check GitHub access", key="recheck_after_preflight_fail"):
+                        with st.spinner("Checking GitHub App install and write access…"):
+                            access_ok, access_detail = _recheck_github_access()
+                        if access_ok:
+                            st.success("GitHub App has read/write access — try generating again.")
+                        else:
+                            st.warning(access_detail or "GitHub App still cannot write to this repository.")
+                        st.rerun()
             else:
                 st.warning("Branch pipeline finished with no branches completed.")
         st.toast("Branch pipeline finished", icon="✅")

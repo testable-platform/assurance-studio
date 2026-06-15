@@ -224,11 +224,83 @@ def github_app_install_help(slug):
     )
 
 
+def _configured_app_slug():
+    return os.getenv("GITHUB_APP_SLUG", "").strip() or "testable-assurance-studio"
+
+
+def app_repo_install_status(token, repo_slug):
+    """Check whether the configured GitHub App is installed and includes *repo_slug*.
+
+    Returns ``(installed, repo_in_install, detail)`` where *installed* means at
+    least one user installation exists for the configured app, and
+    *repo_in_install* means the target repo appears in one of those installations.
+    """
+    slug = normalize_repo_slug(repo_slug)
+    token = (token or "").strip()
+    if not slug:
+        return False, False, "Repository must be owner/repo"
+    if not token:
+        return False, False, "GitHub token is required"
+
+    app_slug = _configured_app_slug()
+    is_app_user = _token_kind(token) == "github-app-user"
+    if not is_app_user and not github_oauth_app_mode():
+        return True, True, "not a GitHub App user token — skip install check"
+
+    try:
+        payload = _api_request(token, "/user/installations?per_page=100")
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            return False, False, "Cannot list GitHub App installations"
+        return False, False, "GitHub API error listing installations (%s)" % exc.code
+    except Exception as exc:
+        return False, False, "Could not list GitHub App installations: %s" % exc
+
+    installations = payload.get("installations") or []
+    app_installs = [
+        inst for inst in installations
+        if (inst.get("app_slug") or "").strip() == app_slug
+    ]
+    if not app_installs:
+        if not installations:
+            return False, False, github_app_install_help(slug)
+        return False, False, (
+            "GitHub App **%s** is not installed for this account. %s"
+            % (app_slug, github_app_install_help(slug))
+        )
+
+    for inst in app_installs:
+        install_id = inst.get("id")
+        if not install_id:
+            continue
+        try:
+            repos_payload = _api_request(
+                token,
+                "/user/installations/%s/repositories?per_page=100" % install_id,
+            )
+        except urllib.error.HTTPError:
+            continue
+        except Exception:
+            continue
+        for repo in repos_payload.get("repositories") or []:
+            full_name = (repo.get("full_name") or "").strip()
+            if full_name.lower() == slug.lower():
+                return True, True, "GitHub App installed on %s" % slug
+
+    return True, False, github_app_install_help(slug)
+
+
 def check_app_repo_access(token, repo_slug):
     """Return (ok, needs_install, detail) for GitHub App user token repo access."""
     slug = normalize_repo_slug(repo_slug)
     if not slug:
         return False, False, "Repository must be owner/repo"
+
+    is_app_context = github_oauth_app_mode() or _token_kind(token) == "github-app-user"
+    if is_app_context:
+        installed, repo_in_install, install_detail = app_repo_install_status(token, slug)
+        if not installed or not repo_in_install:
+            return False, True, install_detail
 
     ok, msg, repo = check_repo_access(token, slug)
     if not ok:
@@ -240,6 +312,9 @@ def check_app_repo_access(token, repo_slug):
             or "read access only" in lowered
             or "not accessible" in lowered
         )
+        if is_app_context and needs_install:
+            needs_install = True
+            msg = github_app_install_help(slug)
         return False, needs_install, msg
 
     from lib.github_api import probe_api_write
@@ -259,7 +334,7 @@ def check_app_repo_access(token, repo_slug):
     if not perms.get("push") and not perms.get("admin"):
         needs_install = True
     detail = api_detail or "GitHub App cannot write to %s" % slug
-    if needs_install and (github_oauth_app_mode() or _token_kind(token) == "github-app-user"):
+    if needs_install and is_app_context:
         detail = github_app_install_help(slug)
     return False, needs_install, detail
 

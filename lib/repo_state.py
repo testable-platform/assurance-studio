@@ -24,7 +24,7 @@ def marker_path(root=None, app_user=None):
     repo_root = Path(root or ROOT)
     key = _user_key(app_user)
     if key:
-        return repo_root / ".pipeline_repo_%s.json" % key
+        return repo_root / (".pipeline_repo_%s.json" % key)
     return repo_root / MARKER_NAME
 
 

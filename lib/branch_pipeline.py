@@ -169,15 +169,24 @@ def process_branches_sequentially(
             assert_row = assert_branch_full(tmp, tech, metric, bt, version, language)
             _progress("assert", assert_row.get("overall", "?"))
 
-            while assert_row.get("overall") != "PASS" and attempts < max_fix_attempts:
+            while assert_row.get("overall") == "FAIL" and attempts < max_fix_attempts:
                 attempts += 1
                 _progress("fix", "fix attempt %d/%d" % (attempts, max_fix_attempts))
                 _fix_branch(tech, metric, bt, version, language, tmp, auto_install)
                 assert_row = assert_branch_full(tmp, tech, metric, bt, version, language)
                 _progress("assert", assert_row.get("overall", "?"))
 
-            if assert_row.get("overall") != "PASS":
+            overall = assert_row.get("overall")
+            if overall == "FAIL":
                 reason = _failure_detail(assert_row)
+                row = _result_row(bname, tech, metric, bt, attempts + 1, assert_row, False, reason)
+                rows.append(row)
+                stopped_at = bname
+                stop_reason = reason
+                break
+
+            if overall not in ("PASS", "PARTIAL"):
+                reason = _failure_detail(assert_row) or "unexpected overall=%s" % overall
                 row = _result_row(bname, tech, metric, bt, attempts + 1, assert_row, False, reason)
                 rows.append(row)
                 stopped_at = bname
@@ -204,11 +213,13 @@ def process_branches_sequentially(
                 break
 
             row = _result_row(bname, tech, metric, bt, attempts + 1, assert_row, True, "")
+            if overall == "PARTIAL":
+                row["failure_reason"] = "metric-behavior deferred to Local tools"
             if commit_sha:
                 row["commit_sha"] = commit_sha[:12]
             rows.append(row)
             completed.append(bname)
-            _progress("done", "PASS + pushed")
+            _progress("done", "%s + pushed" % overall)
         finally:
             shutil.rmtree(tmp_root, ignore_errors=True)
 

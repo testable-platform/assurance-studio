@@ -891,19 +891,39 @@ def _tab_branches(filters):
             st.dataframe(display_rows, width="stretch")
 
             if result.get("success"):
+                completed = result.get("completed", [])
+                partial_rows = [
+                    r for r in result.get("rows", [])
+                    if r.get("pushed") and r.get("overall") == "PARTIAL"
+                ]
                 st.success(
                     "All %d branch(es) validated and pushed to GitHub."
-                    % len(result.get("completed", []))
+                    % len(completed)
                 )
-                st.session_state["last_pushed"] = result.get("completed", [])
+                if partial_rows:
+                    st.info(
+                        "%d branch(es) pushed with **PARTIAL** validation (structure + tool support OK; "
+                        "metric tool unavailable). Deep metric-behavior checks run in **Local tools** "
+                        "and **SonarQube** stages."
+                        % len(partial_rows)
+                    )
+                st.session_state["last_pushed"] = completed
                 st.session_state.pop("push_status_cache", None)
             elif result.get("stopped_at"):
                 reason = result.get("stop_reason", "validation failed")
+                pushed_rows = [r for r in result.get("rows", []) if r.get("pushed")]
+                partial_pushed = [r for r in pushed_rows if r.get("overall") == "PARTIAL"]
                 st.error(
-                    "Stopped at **%s**: %s\n\n"
-                    "No further branches were processed; nothing partial was pushed for this branch."
+                    "Stopped at **%s**: %s"
                     % (result["stopped_at"], reason)
                 )
+                if pushed_rows:
+                    st.warning(
+                        "%d earlier branch(es) were pushed before the stop (%d PARTIAL)."
+                        % (len(pushed_rows), len(partial_pushed))
+                    )
+                else:
+                    st.caption("No branches were pushed for the failed branch.")
                 if "Git Data API" in reason or "not accessible" in reason.lower():
                     st.info(
                         "Disconnect GitHub on the Branches tab, create a new token with write access, "

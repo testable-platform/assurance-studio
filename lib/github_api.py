@@ -48,10 +48,7 @@ def _format_push_error(detail, repo_slug, login=None, token=None):
         or "write access" in lowered
         or "404" in lowered
     )
-    if permission_error and (
-        github_oauth_app_mode()
-        or _token_kind(token or "") == "github-app-user"
-    ):
+    if permission_error and _token_kind(token or "") == "github-app-user":
         return github_app_install_help(slug)
     if permission_error:
         return _pat_write_help(slug, login)

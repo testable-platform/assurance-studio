@@ -17,9 +17,18 @@ def selection_summary(techniques="all", metrics="all", types=None, version="2.6"
     }
 
 
+def technique_label(tech):
+    """Unique sidebar label: technique_code + L3 name (per Excel mapping)."""
+    code = tech.get("technique_code", "")
+    l3 = (tech.get("l3") or "").strip()
+    l2 = (tech.get("l2") or "").strip()
+    name = l3 or l2 or code
+    return "%s — %s" % (code, name)
+
+
 def technique_options(registry=None):
     reg = registry or load_registry()
-    return [(t["technique_code"], "%s — %s" % (t["technique_code"], t.get("l2", ""))) for t in all_techniques(reg)]
+    return [(t["technique_code"], technique_label(t)) for t in all_techniques(reg)]
 
 
 def metric_options(technique_code, registry=None):

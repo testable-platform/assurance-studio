@@ -88,7 +88,7 @@ def _skip_detail(report):
 
 def _branches_on_github(branch_names):
     """In-scope branches that exist on the connected GitHub repo."""
-    if not _github_creds_ready():
+    if not _github_read_config():
         return []
     rows, _ = _branch_push_status(branch_names)
     return [r["branch"] for r in rows if r.get("on_github") == "yes"]
@@ -356,6 +356,38 @@ def _github_push_config():
     session = _github_session()
     if session:
         return session
+    return None
+
+
+def _github_read_config():
+    """GitHub API config for read-only checks (branch status, whitebox repo).
+
+    Signed-in users without OAuth still need branch presence checks; allow the
+    shared PAT + REPOSITORY_MATCH fallback here only (push stays OAuth-only).
+    """
+    cfg = _github_push_config()
+    if cfg:
+        return cfg
+
+    app_user = _app_user_email()
+    if not app_user:
+        return None
+
+    repo_slug = _resolved_repo_slug() or os.environ.get("REPOSITORY_MATCH", "").strip()
+    if not repo_slug:
+        conn = get_connection(app_user)
+        if conn:
+            repo_slug = (conn.repo_slug or "").strip()
+
+    pat = os.environ.get("GITHUB_TOKEN", "").strip()
+    if pat and repo_slug:
+        return {
+            "token": pat,
+            "repo_slug": repo_slug,
+            "login": st.session_state.get("github_user_login", ""),
+            "default_branch": st.session_state.get("github_default_branch", "main"),
+            "push_method": "pat",
+        }
     return None
 
 
@@ -903,8 +935,8 @@ def _branch_push_status(branches, force_refresh=False):
     if not force_refresh and cache and cache.get("key") == key:
         return cache["rows"], cache["all_pushed"]
 
-    github_config = _github_push_config()
-    repo_slug = _github_repo_for_links()
+    github_config = _github_read_config()
+    repo_slug = (github_config or {}).get("repo_slug") or _github_repo_for_links()
     if not github_config:
         # No credentials: never touch git (origin fallback can trigger a
         # credential-manager browser prompt). Report everything as not pushed.
@@ -1229,13 +1261,27 @@ def _tab_whitebox(filters):
     branches_csv = ",".join(branches)
     st.code(branches_csv, language=None)
 
+    read_cfg = _github_read_config()
     st.subheader("GitHub push gate")
+    if read_cfg:
+        st.caption(
+            "Checking branch presence on **%s** (%s)."
+            % (read_cfg.get("repo_slug", "—"), read_cfg.get("push_method", "oauth"))
+        )
+    elif not _github_creds_ready():
+        st.warning(
+            "Connect GitHub on the **Branches** tab, or set **GITHUB_TOKEN** and "
+            "**REPOSITORY_MATCH** in `.env.local` to check branch status."
+        )
+
     wb_refresh = st.button("Refresh GitHub status", key="refresh_push_whitebox")
     if wb_refresh:
         st.session_state.pop("push_status_cache", None)
     push_rows, all_pushed = _branch_push_status(branches, force_refresh=wb_refresh)
     st.dataframe(push_rows, width="stretch")
-    if not all_pushed:
+    if not read_cfg:
+        all_pushed = False
+    elif not all_pushed:
         not_pushed = [r["branch"] for r in push_rows if r["on_github"] != "yes"]
         st.error(
             "Push all in-scope branches on the Branches tab before running whitebox. "
@@ -1269,22 +1315,26 @@ def _tab_whitebox(filters):
         help="How long to wait for GitHub branches to appear in the Testable catalog.",
     )
 
+    wb_can_run = bool(read_cfg) and all_pushed and filters.get("qa_ready")
     if st.button(
         "Run whitebox batch",
         type="primary",
         width="stretch",
-        disabled=not all_pushed,
+        disabled=not wb_can_run,
     ):
-        if not all_pushed:
+        if not read_cfg or not all_pushed:
             st.error("Push all in-scope branches to GitHub before running whitebox.")
             return
         if not email_for_auth or not password_for_auth:
-            st.error("Enter credentials and click Verify login before running whitebox.")
+            st.error("Sign in using the **Account** panel in the sidebar before running whitebox.")
             return
         with RunPanel("Whitebox QA") as panel:
-            gh_repo = _github_repo_for_links()
+            gh_repo = (read_cfg or {}).get("repo_slug") or _github_repo_for_links()
             if not gh_repo:
-                st.error("Select a GitHub repository on the Branches tab before running whitebox.")
+                st.error(
+                    "Select a GitHub repository on the Branches tab, or set "
+                    "**REPOSITORY_MATCH** in `.env.local` before running whitebox."
+                )
                 return
             old_partial_sync = os.environ.get("PARTIAL_BRANCH_SYNC_SEC")
             old_branch_sync = os.environ.get("BRANCH_SYNC_TIMEOUT_SEC")

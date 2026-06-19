@@ -250,7 +250,7 @@ def _whitebox_result_row(bname, info, proof_row=None):
         "run_health": info.get("run_health", "—"),
         "taxonomy": proof_row.get("taxonomy_report", "—"),
         "s3": proof_row.get("s3_report", "—"),
-        "detail": proof_row.get("s3_detail") or info.get("run_health_detail") or info.get("detail", ""),
+        "detail": proof_row.get("taxonomy_detail") or proof_row.get("s3_detail") or info.get("run_health_detail") or info.get("detail", ""),
     }
 
 
@@ -2893,6 +2893,11 @@ def _tab_whitebox(filters):
                 r for r in proof_rows
                 if wb_after.get(r["branch"], {}).get("run_health") == "DEGRADED"
             ]
+            partial_tasks = [
+                r for r in proof_rows
+                if wb_after.get(r["branch"], {}).get("run_health") == "OK"
+                and (wb_after.get(r["branch"], {}).get("failed_tasks") or 0) > 0
+            ]
             if rc != 0 or completed == 0:
                 st.warning(
                     "Whitebox finished with issues: %d/%d branches completed with taxonomy reports"
@@ -2903,6 +2908,13 @@ def _tab_whitebox(filters):
                     "Taxonomy produced for all branches, but %d run(s) had failed/partial whitebox tasks: %s"
                     % (len(degraded), ", ".join(r["branch"] for r in degraded))
                 )
+            elif partial_tasks:
+                st.info(
+                    "Whitebox completed for all %d branches. %d had non-blocking platform task failures "
+                    "(taxonomy reports were still produced)."
+                    % (completed, len(partial_tasks))
+                )
+                panel.set_result("complete", "complete")
             else:
                 st.success("Whitebox completed for all %d selected branches" % completed)
                 panel.set_result("complete", "complete")

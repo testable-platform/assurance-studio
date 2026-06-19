@@ -21,6 +21,11 @@ def _s3_config():
 
 
 def _branch_allowed(branch):
+    active = os.environ.get("S3_SYNC_ACTIVE_BRANCHES", "").strip()
+    if active:
+        active_set = frozenset(b.strip() for b in active.split(",") if b.strip())
+        if branch in active_set:
+            return True
     prefix = os.environ.get("S3_SYNC_BRANCH_PREFIX", "").strip()
     if prefix and not branch.startswith(prefix):
         return False

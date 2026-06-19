@@ -174,3 +174,55 @@ def failing_sections(taxonomy_json, score_threshold=0.0):
                         "normalized_score": score,
                     })
     return rows
+
+
+def branch_taxonomy_scope(branch_name, registry=None):
+    """Registry taxonomy labels that apply to one generated branch."""
+    from lib.metrics import infer_from_branch_name
+    from lib.registry import metric_entry
+
+    tech, metric, _, _ = infer_from_branch_name(branch_name, registry)
+    if not tech or not metric:
+        return set()
+    try:
+        _, entry = metric_entry(tech, metric, registry)
+    except KeyError:
+        return set()
+    labels = {
+        entry.get("taxonomy_classification"),
+        entry.get("l4_classification"),
+        entry.get("l5_metric"),
+    }
+    return {label.strip() for label in labels if label and str(label).strip()}
+
+
+def failing_sections_for_branch(
+    taxonomy_json,
+    branch_name,
+    registry=None,
+    score_threshold=0.0,
+):
+    """Like failing_sections, but only for classifications in this branch's metric scope."""
+    scope = branch_taxonomy_scope(branch_name, registry)
+    if not scope:
+        return failing_sections(taxonomy_json, score_threshold=score_threshold)
+    rows = []
+    if not taxonomy_json:
+        return rows
+    for tt in taxonomy_json.get("weighted_breakdown") or []:
+        testing_type = tt.get("testing_type", "")
+        for technique in tt.get("techniques") or []:
+            tech_name = technique.get("technique", "")
+            for cls in technique.get("classifications") or []:
+                name = cls.get("classification", "")
+                if name not in scope:
+                    continue
+                score = cls.get("normalized_score")
+                if score is None or float(score) <= score_threshold:
+                    rows.append({
+                        "testing_type": testing_type,
+                        "technique": tech_name,
+                        "classification": name,
+                        "normalized_score": score,
+                    })
+    return rows

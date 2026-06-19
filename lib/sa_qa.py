@@ -1606,6 +1606,9 @@ def main_with_args(args, progress_callback=None, result_meta=None):
     for _b in list(branches) + list(catalog_skipped):
         _manifest_for(_classification_for(_b))
 
+    old_s3_active = os.environ.get("S3_SYNC_ACTIVE_BRANCHES")
+    os.environ["S3_SYNC_ACTIVE_BRANCHES"] = ",".join(branches)
+
     print("\n=== Sequential branch runs ===")
     total_branches = len(branches)
     for idx, branch_name in enumerate(branches, start=1):
@@ -1686,6 +1689,11 @@ def main_with_args(args, progress_callback=None, result_meta=None):
             _progress("whitebox", idx, total_branches, branch_name, "failed: %s" % exc)
             if not continue_on_failure:
                 break
+
+    if old_s3_active is not None:
+        os.environ["S3_SYNC_ACTIVE_BRANCHES"] = old_s3_active
+    else:
+        os.environ.pop("S3_SYNC_ACTIVE_BRANCHES", None)
 
     all_runs = []
     _progress("export", 0, 1, "", "exporting taxonomy HTML")

@@ -27,6 +27,7 @@ from lib.sa_qa import format_task_failure_detail
 from lib.s3_sync import sync_from_taxonomy_meta
 from lib.taxonomy_meta import (
     failing_sections,
+    failing_sections_for_branch,
     latest_taxonomy_by_branch,
     load_manifest_runs,
     load_run_summary_from_meta,
@@ -155,9 +156,23 @@ def whitebox_completion(branches, taxonomy_root="taxonomy_reports", root=None, r
             or []
         )
         gate_json = load_taxonomy_gate_json(meta)
-        fail_sections = failing_sections(gate_json) if gate_json else []
+        gate_status = (gate_json.get("gate_status") or "").lower()
+        taxonomy_complete = has_taxonomy and gate_status == "completed"
+        fail_sections = (
+            failing_sections_for_branch(gate_json, bname, reg)
+            if gate_json else []
+        )
 
-        if run_status == "completed" and (not total_tasks or failed_tasks == 0):
+        if taxonomy_complete:
+            run_health = "OK"
+            if failed_tasks:
+                run_health_detail = (
+                    "taxonomy complete; platform run %s with %d/%d tasks (%d failed)"
+                    % (run_status or "finished", completed_tasks, total_tasks, failed_tasks)
+                )
+            else:
+                run_health_detail = "taxonomy complete"
+        elif run_status == "completed" and (not total_tasks or failed_tasks == 0):
             run_health = "OK"
             run_health_detail = "whitebox run completed"
         elif run_status in ("failed", "partial") or failed_tasks:
@@ -336,7 +351,15 @@ def collect_s3_proof(
         env_file = repo_root / ".env.local"
         if env_file.is_file():
             load_env(str(env_file))
-        sync_summary = sync_from_taxonomy_meta(meta, dry_run=False)
+        prev_active = os.environ.get("S3_SYNC_ACTIVE_BRANCHES")
+        os.environ["S3_SYNC_ACTIVE_BRANCHES"] = branch_name
+        try:
+            sync_summary = sync_from_taxonomy_meta(meta, dry_run=False)
+        finally:
+            if prev_active is not None:
+                os.environ["S3_SYNC_ACTIVE_BRANCHES"] = prev_active
+            else:
+                os.environ.pop("S3_SYNC_ACTIVE_BRANCHES", None)
     else:
         sync_summary = None
 
@@ -353,15 +376,19 @@ def collect_s3_proof(
             commit_sha=commit_sha,
             run_id=run_id,
         )
-        report["status"] = "SKIPPED"
-        report["raw_summary"] = "S3 bundle not found"
-        skip_parts = [
-            "S3 bundle not found for commit=%s run=%s under %s"
-            % (commit_sha or "?", run_id or "?", dl_root)
-        ]
-        if sync_summary:
-            sync_status = sync_summary.get("status", "")
-            sync_reason = sync_summary.get("reason") or sync_summary.get("error", "")
+        sync_status = (sync_summary or {}).get("status", "")
+        sync_reason = (sync_summary or {}).get("reason") or (sync_summary or {}).get("error", "")
+        if sync_status == "SKIPPED" and sync_reason:
+            report["status"] = "SKIPPED"
+            report["raw_summary"] = sync_reason
+            skip_parts = [sync_reason]
+        else:
+            report["status"] = "SKIPPED"
+            report["raw_summary"] = "S3 bundle not found"
+            skip_parts = [
+                "S3 bundle not found for commit=%s run=%s under %s"
+                % (commit_sha or "?", run_id or "?", dl_root)
+            ]
             if sync_status and sync_status != "OK":
                 skip_parts.append("sync %s: %s" % (sync_status, sync_reason or "no details"))
         report.setdefault("extra", {})["skip_reason"] = "; ".join(skip_parts)

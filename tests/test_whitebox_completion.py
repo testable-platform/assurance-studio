@@ -75,6 +75,33 @@ class WhiteboxCompletionTests(unittest.TestCase):
         result = whitebox_completion([branch], root=self._tmpdir)
         self.assertEqual(result[branch]["status"], "NOT_COMPLETED")
 
+    def test_taxonomy_complete_with_failed_task_is_ok_health(self):
+        branch = "SX_Entry-Point-Sanitization_Bug_2.6"
+        class_dir = self._class_dir("Security White-box Testing")
+        folder = os.path.join(class_dir, "%s_20260618T210012Z" % branch)
+        os.makedirs(folder, exist_ok=True)
+        html_path = os.path.join(folder, "taxonomy-gate-run.html")
+        with open(html_path, "w", encoding="utf-8") as fh:
+            fh.write(_taxonomy_html(branch, "run-sx-001"))
+        with open(os.path.join(folder, "run_summary.json"), "w", encoding="utf-8") as fh:
+            import json
+            json.dump(
+                {
+                    "status": "failed",
+                    "total_tasks": 28,
+                    "completed_tasks": 27,
+                    "failed_tasks": 1,
+                },
+                fh,
+            )
+        with open(os.path.join(folder, "taxonomy-gate.json"), "w", encoding="utf-8") as fh:
+            import json
+            json.dump({"gate_status": "completed", "weighted_breakdown": []}, fh)
+        result = whitebox_completion([branch], root=self._tmpdir)
+        self.assertEqual(result[branch]["status"], "COMPLETED")
+        self.assertEqual(result[branch]["run_health"], "OK")
+        self.assertEqual(result[branch]["failed_tasks"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

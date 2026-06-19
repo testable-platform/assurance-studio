@@ -14,6 +14,21 @@ from lib.python_generator import read_gen_meta
 from lib.validate_multi import assert_branch_structure, _count_loc
 
 
+def _env_int(name, default):
+    try:
+        return max(1, int(os.environ.get(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _import_timeout_sec():
+    return _env_int("BRANCH_IMPORT_TIMEOUT_SEC", 45)
+
+
+def _pytest_timeout_sec():
+    return _env_int("BRANCH_PYTEST_TIMEOUT_SEC", 180)
+
+
 def _syntax_check_python(branch_dir):
     errors = []
     for dirpath, _, files in os.walk(branch_dir):
@@ -108,7 +123,7 @@ def verify_generated_branch(branch_dir, tech, metric, bt, version, language, pro
                 cwd=branch_dir,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=_import_timeout_sec(),
                 check=False,
             )
             if proc.returncode != 0:
@@ -125,7 +140,7 @@ def verify_generated_branch(branch_dir, tech, metric, bt, version, language, pro
                 cwd=branch_dir,
                 capture_output=True,
                 text=True,
-                timeout=600,
+                timeout=_pytest_timeout_sec(),
                 check=False,
             )
             combined = (proc.stdout or "") + (proc.stderr or "")

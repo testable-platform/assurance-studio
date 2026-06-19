@@ -434,6 +434,7 @@ def _gen_main(pkg, metric_code, module_key, n_fn):
 
 
 def _gen_tests(pkg, metric, branch_type, n_fn, strength=0, technique_code=None, tool=""):
+    from lib.lang_generators.base import scaled_test_count
     from lib.tool_assert import tool_family
 
     files = {"tests/__init__.py": FUTURE}
@@ -449,9 +450,7 @@ def _gen_tests(pkg, metric, branch_type, n_fn, strength=0, technique_code=None, 
             "    def test_one_case(self):\n"
             "        self.assertTrue(%s('x', True, 1, 3))\n" % (pkg, mod, fn, fn))
         return files
-    test_count = n_fn if branch_type != "Bug" else 1
-    if strength > 0 and branch_type != "Bug":
-        test_count = min(n_fn, 18 + strength * 8)
+    test_count = scaled_test_count(n_fn, branch_type, strength)
     use_exact = family == "mutation"
     lines = [
         FUTURE,
@@ -507,7 +506,7 @@ def _tool_configs(branch_type, pkg, primary_tool, family=None):
 
 
 def generate_branch_files(technique_code, metric_code, branch_type, version="2.6", language="python", strength=0):
-    from lib.lang_generators.base import effective_strength
+    from lib.lang_generators.base import effective_strength, scaled_n_functions
     strength = effective_strength(strength)
     if (language or "python").strip().lower() != "python":
         from lib.lang_generators.template_core import generate_branch_files as dispatch_gen
@@ -521,7 +520,7 @@ def generate_branch_files(technique_code, metric_code, branch_type, version="2.6
     tool = (metric.get("tools") or {}).get("python", {}).get("primary", "")
     bname = metrics_branch_name(technique_code, metric_code, branch_type, version)
 
-    n_fn = n_functions(technique_code, metric_code)
+    n_fn = scaled_n_functions(n_functions(technique_code, metric_code), strength)
     files = None
     loc = 0
     while n_fn <= 180:

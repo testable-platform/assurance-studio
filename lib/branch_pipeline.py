@@ -8,17 +8,25 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 from lib.branch_asserts import assert_branch_full
 from lib.branch_post_verify import verify_generated_branch
-from lib.github_api import push_branch_to_github, read_remote_text
-from lib.github_auth import check_app_repo_access
+from lib.github_api import fetch_branch_source, push_branch_to_github, read_remote_text
+from lib.github_auth import check_app_repo_access, _token_kind
 from lib.lang_generators.base import effective_strength
 from lib.lang_generators import write_branch
 from lib.python_generator import generate_branch_files, read_gen_meta
 from lib.registry import iter_branches
 from lib.tool_map import metric_tool, pip_packages_for_family, pip_packages_for_primary
 from lib.lang_tool_runners import packages_for_language
+
+
+STALL_ROUNDS_LIMIT = 3
+
+
+def _deadline_passed(deadline):
+    return deadline is not None and time.time() >= deadline
 
 
 def _user_work_key(app_user):
@@ -77,6 +85,209 @@ def remote_branch_strength(github_config, branch_name):
         return int(meta.get("strength", 0))
     except (ValueError, TypeError, json.JSONDecodeError):
         return 0
+
+
+def local_branch_strength(work_root, branch_name):
+    """Return strength from a local work copy, or 0 if missing."""
+    branch_dir = os.path.join(os.path.abspath(work_root), branch_name)
+    if not os.path.isdir(branch_dir):
+        return 0
+    meta = read_gen_meta(branch_dir)
+    try:
+        return max(0, int(meta.get("strength", 0) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def next_regen_strength(local_s, remote_s, session_s=0, exists=False):
+    """Single source for the next write strength (display + generate)."""
+    try:
+        local_s = max(0, int(local_s or 0))
+        remote_s = max(0, int(remote_s or 0))
+        session_s = max(0, int(session_s or 0))
+    except (TypeError, ValueError):
+        local_s = remote_s = session_s = 0
+    if not exists and local_s <= 0 and remote_s <= 0 and session_s <= 0:
+        return 0
+    current = max(local_s, remote_s, session_s)
+    if current <= 0:
+        return 1
+    return current + 1
+
+
+def build_regeneration_strength_map(
+    work_root,
+    branch_names,
+    github_config=None,
+    push_rows=None,
+    gen_rows=None,
+):
+    """Next generate strength: max(local, remote, session) + 1 when the branch already exists."""
+    push_by = {}
+    for row in push_rows or []:
+        if row.get("branch"):
+            push_by[row["branch"]] = row
+    session_by = {}
+    for row in gen_rows or []:
+        bname = (row.get("branch_name") or "").strip()
+        if not bname:
+            continue
+        try:
+            session_by[bname] = max(0, int(row.get("strength") or 0))
+        except (TypeError, ValueError):
+            session_by[bname] = 0
+    out = {}
+    work_root = os.path.abspath(work_root)
+    for bname in branch_names:
+        local_s = local_branch_strength(work_root, bname)
+        remote_s = 0
+        on_github = push_by.get(bname, {}).get("on_github") == "yes"
+        if github_config and on_github:
+            remote_s = remote_branch_strength(github_config, bname)
+        exists = local_s > 0 or remote_s > 0 or os.path.isdir(
+            os.path.join(work_root, bname)
+        ) or on_github
+        session_s = session_by.get(bname, 0)
+        out[bname] = next_regen_strength(local_s, remote_s, session_s, exists=exists)
+    return out
+
+
+def sync_gen_rows_strength_from_work(gen_rows, work_root):
+    """Refresh gen_rows strength/loc from on-disk .gen_meta.json."""
+    work_root = os.path.abspath(work_root)
+    for row in gen_rows or []:
+        bname = row.get("branch_name")
+        branch_dir = row.get("dir") or os.path.join(work_root, bname or "")
+        if bname and os.path.isdir(branch_dir):
+            meta = read_gen_meta(branch_dir)
+            row["strength"] = meta.get("strength", row.get("strength", 0))
+            row["loc"] = meta.get("loc", row.get("loc"))
+    return gen_rows
+
+
+def _empty_score_history_entry():
+    return {
+        "prev_strength": None,
+        "prev_score": None,
+        "cur_strength": None,
+        "cur_score": None,
+        "regenerated": False,
+    }
+
+
+def snapshot_previous_scores(
+    history,
+    regenerated_branches,
+    last_strength_by_branch=None,
+    last_score_by_branch=None,
+):
+    """Snapshot prior gen strength and validation score before regenerating branches."""
+    history = dict(history or {})
+    last_strength_by_branch = last_strength_by_branch or {}
+    last_score_by_branch = last_score_by_branch or {}
+    for bname in regenerated_branches or []:
+        entry = dict(history.get(bname) or _empty_score_history_entry())
+        prev_strength = entry.get("cur_strength")
+        if prev_strength is None:
+            prev_strength = last_strength_by_branch.get(bname)
+        prev_score = entry.get("cur_score")
+        if prev_score is None:
+            prev_score = last_score_by_branch.get(bname)
+        entry["prev_strength"] = prev_strength
+        entry["prev_score"] = prev_score
+        entry["cur_strength"] = None
+        entry["cur_score"] = None
+        entry["regenerated"] = True
+        history[bname] = entry
+    return history
+
+
+def update_regenerated_strength(history, gen_rows):
+    """Set cur_strength on regenerated branches from fresh generate rows."""
+    history = dict(history or {})
+    for row in gen_rows or []:
+        bname = (row.get("branch_name") or "").strip()
+        if not bname:
+            continue
+        entry = history.get(bname)
+        if not entry or not entry.get("regenerated"):
+            continue
+        try:
+            entry["cur_strength"] = max(0, int(row.get("strength") or 0))
+        except (TypeError, ValueError):
+            entry["cur_strength"] = 0
+        history[bname] = entry
+    return history
+
+
+def apply_current_scores(history, validate_rows):
+    """Fill cur_score (and cur_strength when present) from validation rows."""
+    history = dict(history or {})
+    for row in validate_rows or []:
+        bname = (row.get("branch_name") or "").strip()
+        if not bname:
+            continue
+        entry = dict(history.get(bname) or _empty_score_history_entry())
+        if row.get("strength_score") is not None:
+            try:
+                entry["cur_score"] = float(row.get("strength_score"))
+            except (TypeError, ValueError):
+                pass
+        if row.get("strength") is not None:
+            try:
+                entry["cur_strength"] = max(0, int(row.get("strength") or 0))
+            except (TypeError, ValueError):
+                pass
+        history[bname] = entry
+    return history
+
+
+def ensure_local_branches(
+    work_root,
+    github_config,
+    techniques,
+    metrics,
+    types,
+    version,
+    push_rows=None,
+):
+    """Fetch in-scope branches from GitHub into *work_root* when missing locally.
+
+    Returns ``(gen_rows, materialized, errors)`` where *materialized* lists branch
+    names downloaded from the remote repo and *errors* lists ``(branch, message)``
+    pairs for fetch failures.
+    """
+    work_root = os.path.abspath(work_root)
+    os.makedirs(work_root, exist_ok=True)
+
+    push_by = {}
+    for row in push_rows or []:
+        if row.get("branch"):
+            push_by[row["branch"]] = row
+
+    token = (github_config or {}).get("token", "").strip()
+    repo_slug = (github_config or {}).get("repo_slug", "").strip()
+    materialized = []
+    errors = []
+
+    for tech, metric, bt, bname in iter_branches(techniques, metrics, types, version):
+        branch_dir = os.path.join(work_root, bname)
+        if os.path.isdir(branch_dir):
+            continue
+        on_github = push_by.get(bname, {}).get("on_github") == "yes"
+        if not on_github:
+            continue
+        if not token or not repo_slug:
+            errors.append((bname, "GitHub credentials missing — cannot fetch remote branch"))
+            continue
+        try:
+            fetch_branch_source(token, repo_slug, bname, branch_dir)
+            materialized.append(bname)
+        except Exception as exc:
+            errors.append((bname, str(exc)))
+
+    gen_rows = hydrate_gen_rows_from_work(work_root, techniques, metrics, types, version)
+    return gen_rows, materialized, errors
 
 
 def _failure_detail(assert_row):
@@ -179,20 +390,38 @@ def generate_branches(
     progress_callback=None,
     clear_existing=True,
     strength_map=None,
+    deadline=None,
+    branch_names_filter=None,
+    max_fix_attempts=3,
+    auto_install=True,
 ):
     """Write in-scope branches to work_root/<branch_name>."""
     work_root = os.path.abspath(work_root)
-    if clear_existing and os.path.isdir(work_root):
+    planned = list(iter_branches(techniques, metrics, types, version))
+    if branch_names_filter is not None:
+        allow = set(branch_names_filter)
+        planned = [item for item in planned if item[3] in allow]
+    total = len(planned)
+    branch_names = [bname for _, _, _, bname in planned]
+
+    if strength_map is None:
+        strength_map = build_regeneration_strength_map(work_root, branch_names)
+
+    if clear_existing and branch_names_filter is None and os.path.isdir(work_root):
         shutil.rmtree(work_root, ignore_errors=True)
     os.makedirs(work_root, exist_ok=True)
 
-    planned = list(iter_branches(techniques, metrics, types, version))
-    total = len(planned)
     rows = []
     stopped_at = None
     stop_reason = None
+    stop_cause = None
 
     for idx, (tech, metric, bt, bname) in enumerate(planned, start=1):
+        if _deadline_passed(deadline):
+            stop_cause = "time_budget"
+            stop_reason = "Stage time budget reached before %s" % bname
+            break
+
         branch_dir = os.path.join(work_root, bname)
         strength = 0
         if strength_map and bname in strength_map:
@@ -221,6 +450,26 @@ def generate_branches(
                 branch_dir, tech, metric, bt, version, language,
                 progress_callback=_verify_cb,
             )
+            if not vr.get("ok") and max_fix_attempts:
+                for attempt in range(1, int(max_fix_attempts) + 1):
+                    fix_strength = strength + attempt
+                    _progress(
+                        "fix",
+                        "verify failed, regenerating strength=%d (attempt %d/%d)"
+                        % (fix_strength, attempt, int(max_fix_attempts)),
+                    )
+                    _fix_branch(
+                        tech, metric, bt, version, language, branch_dir,
+                        auto_install, strength=fix_strength,
+                    )
+                    meta = read_gen_meta(branch_dir)
+                    strength = meta.get("strength", fix_strength)
+                    vr = verify_generated_branch(
+                        branch_dir, tech, metric, bt, version, language,
+                        progress_callback=_verify_cb,
+                    )
+                    if vr.get("ok"):
+                        break
             if not vr.get("ok"):
                 err = "verify failed: %s" % "; ".join(vr.get("messages") or ["unknown"])
                 rows.append({
@@ -274,6 +523,8 @@ def generate_branches(
                 stop_reason = err
 
     generated = [r for r in rows if r.get("generated")]
+    generated_names = {r["branch_name"] for r in generated}
+    remaining = [bname for _, _, _, bname in planned if bname not in generated_names]
     if total == 0:
         return {
             "rows": rows,
@@ -282,7 +533,17 @@ def generate_branches(
             "stop_reason": "No branches in scope",
             "success": False,
             "total": 0,
+            "completed": [],
+            "remaining": [],
+            "stop_cause": "done",
         }
+    if stop_cause is None:
+        if len(generated_names) == total:
+            stop_cause = "done"
+        elif remaining:
+            stop_cause = "errors"
+        else:
+            stop_cause = "done"
     return {
         "rows": rows,
         "generated": generated,
@@ -290,6 +551,9 @@ def generate_branches(
         "stop_reason": stop_reason,
         "success": len(generated) == total,
         "total": total,
+        "completed": sorted(generated_names),
+        "remaining": remaining,
+        "stop_cause": stop_cause,
     }
 
 
@@ -301,6 +565,7 @@ def validate_branches(
     auto_install=True,
     progress_callback=None,
     block_strict=True,
+    deadline=None,
 ):
     """Run assert validation with fix-until-pass loop per branch."""
     rows_in = [r for r in (gen_rows or []) if r.get("generated") and r.get("dir")]
@@ -309,6 +574,7 @@ def validate_branches(
     validated = []
     stopped_at = None
     stop_reason = None
+    stop_cause = None
 
     if total == 0:
         return {
@@ -318,6 +584,9 @@ def validate_branches(
             "stop_reason": "No generated branches to validate — run Generate first",
             "success": False,
             "total": 0,
+            "completed": [],
+            "remaining": [],
+            "stop_cause": "done",
         }
 
     if auto_install and (language or "python").strip().lower() == "python":
@@ -348,6 +617,11 @@ def validate_branches(
                 progress_callback("install", 0, total, "", msg if ok else "install failed: %s" % msg)
 
     for idx, gen in enumerate(rows_in, start=1):
+        if _deadline_passed(deadline):
+            stop_cause = "time_budget"
+            stop_reason = "Stage time budget reached before %s" % gen.get("branch_name")
+            break
+
         tech = gen["technique_code"]
         metric = gen["metric_code"]
         bt = gen["branch_type"]
@@ -400,6 +674,9 @@ def validate_branches(
         validated.append(bname)
         _progress("validated", "strength=%s" % assert_row.get("strength_score"))
 
+    remaining = [g["branch_name"] for g in rows_in if g["branch_name"] not in validated]
+    if stop_cause is None:
+        stop_cause = "done" if len(validated) == total else "errors"
     return {
         "rows": rows,
         "validated": validated,
@@ -407,6 +684,9 @@ def validate_branches(
         "stop_reason": stop_reason,
         "success": len(validated) == total,
         "total": total,
+        "completed": list(validated),
+        "remaining": remaining,
+        "stop_cause": stop_cause,
     }
 
 
@@ -428,6 +708,7 @@ def validate_with_regeneration(
     max_rounds=25,
     progress_callback=None,
     block_strict=True,
+    deadline=None,
 ):
     """Validate branches; regenerate failed branches and re-validate until all pass or max_rounds."""
     result = validate_branches(
@@ -438,17 +719,24 @@ def validate_with_regeneration(
         auto_install=auto_install,
         progress_callback=progress_callback,
         block_strict=block_strict,
+        deadline=deadline,
     )
     rows_by_branch = {r["branch_name"]: r for r in result.get("rows", [])}
     validated = set(result.get("validated") or [])
     total = result.get("total", 0)
     rounds_used = 0
+    stop_cause = result.get("stop_cause")
 
     if total == 0:
         result["rounds_used"] = 0
         return result
 
+    if result.get("stop_cause") == "time_budget":
+        result["rounds_used"] = 0
+        return result
+
     stalled = False
+    stall_rounds = 0
     best_by_branch = {
         bname: _branch_strength_score(row)
         for bname, row in rows_by_branch.items()
@@ -456,6 +744,9 @@ def validate_with_regeneration(
     }
 
     while len(validated) < total and rounds_used < max_rounds:
+        if _deadline_passed(deadline):
+            stop_cause = "time_budget"
+            break
         rounds_used += 1
         failed_rows = [
             g for g in (gen_rows or [])
@@ -465,12 +756,15 @@ def validate_with_regeneration(
             break
         n_failed = len(failed_rows)
         for idx, g in enumerate(failed_rows, start=1):
+            if _deadline_passed(deadline):
+                stop_cause = "time_budget"
+                break
             bname = g["branch_name"]
             try:
                 base_strength = max(0, int(g.get("strength") or 0))
             except (TypeError, ValueError):
                 base_strength = 0
-            new_strength = base_strength + rounds_used
+            new_strength = base_strength + 1
             if progress_callback:
                 progress_callback(
                     "regenerate",
@@ -492,6 +786,9 @@ def validate_with_regeneration(
             g["strength"] = meta.get("strength", new_strength)
             g["loc"] = meta.get("loc")
 
+        if stop_cause == "time_budget":
+            break
+
         sub = validate_branches(
             failed_rows,
             version,
@@ -500,7 +797,10 @@ def validate_with_regeneration(
             auto_install=auto_install,
             progress_callback=progress_callback,
             block_strict=block_strict,
+            deadline=deadline,
         )
+        if sub.get("stop_cause") == "time_budget":
+            stop_cause = "time_budget"
         for r in sub.get("rows", []):
             rows_by_branch[r["branch_name"]] = r
         validated |= set(sub.get("validated") or [])
@@ -518,8 +818,16 @@ def validate_with_regeneration(
             best_by_branch[bname] = max(prev, score)
 
         if not improved:
-            stalled = True
-            break
+            stall_rounds += 1
+            if stall_rounds >= STALL_ROUNDS_LIMIT:
+                stalled = True
+                stop_cause = "stalled"
+                break
+        else:
+            stall_rounds = 0
+
+    if rounds_used >= max_rounds and len(validated) < total and stop_cause not in ("time_budget", "stalled"):
+        stop_cause = "max_rounds"
 
     rows = list(rows_by_branch.values())
     stopped_at = next((r["branch_name"] for r in rows if r["branch_name"] not in validated), None)
@@ -547,6 +855,13 @@ def validate_with_regeneration(
                 stop_reason, rounds_used, stuck_score,
             )
 
+    remaining = sorted(set(
+        g["branch_name"] for g in (gen_rows or [])
+        if g.get("generated") and g.get("dir")
+    ) - validated)
+    if stop_cause is None:
+        stop_cause = "done" if len(validated) == total else "errors"
+
     return {
         "rows": rows,
         "validated": sorted(validated),
@@ -555,6 +870,9 @@ def validate_with_regeneration(
         "success": len(validated) == total and total > 0,
         "total": total,
         "rounds_used": rounds_used,
+        "completed": sorted(validated),
+        "remaining": remaining,
+        "stop_cause": stop_cause,
     }
 
 
@@ -563,6 +881,7 @@ def push_branches(
     github_config,
     progress_callback=None,
     fallback_config=None,
+    deadline=None,
 ):
     """Push validated branch directories to GitHub."""
 
@@ -570,6 +889,7 @@ def push_branches(
         return {
             "rows": [],
             "completed": [],
+            "failed": [],
             "stopped_at": None,
             "stop_reason": reason,
             "success": False,
@@ -577,9 +897,11 @@ def push_branches(
             "total": total,
             "push_method": None,
             "used_fallback": False,
+            "remaining": [],
+            "stop_cause": "errors",
         }
 
-    def _attempt(cfg):
+    def _attempt(cfg, candidates=None):
         if not cfg or not cfg.get("token") or not cfg.get("repo_slug"):
             return _empty_result("GitHub not configured")
 
@@ -594,6 +916,7 @@ def push_branches(
             return {
                 "rows": [],
                 "completed": [],
+                "failed": [],
                 "stopped_at": None,
                 "stop_reason": access_msg,
                 "success": False,
@@ -601,19 +924,30 @@ def push_branches(
                 "total": 0,
                 "push_method": push_method,
                 "used_fallback": False,
+                "remaining": [],
+                "stop_cause": "errors",
             }
 
-        candidates = [
+        default_candidates = [
             r for r in (validated_rows or [])
             if r.get("overall") in ("PASS", "PARTIAL") and r.get("dir") and os.path.isdir(r.get("dir"))
         ]
-        total = len(candidates)
+        cand = candidates if candidates is not None else default_candidates
+        total = len(cand)
         rows = []
         completed = []
+        failed = []
         stopped_at = None
         stop_reason = None
+        stop_cause = None
+        needs_install_flag = False
 
-        for idx, row in enumerate(candidates, start=1):
+        for idx, row in enumerate(cand, start=1):
+            if _deadline_passed(deadline):
+                stop_cause = "time_budget"
+                stop_reason = "Stage time budget reached before %s" % row.get("branch_name")
+                break
+
             tech = row["technique_code"]
             metric = row["metric_code"]
             bt = row["branch_type"]
@@ -646,9 +980,17 @@ def push_branches(
                 out = dict(row)
                 out.update({"pushed": False, "failure_reason": push_err, "push_method": push_method})
                 rows.append(out)
-                stopped_at = bname
-                stop_reason = push_err
-                break
+                failed.append(bname)
+                if stopped_at is None:
+                    stopped_at = bname
+                    stop_reason = push_err
+                if (
+                    _token_kind(token) == "github-app-user"
+                    and "Contents: Read & write" in (push_err or "")
+                ):
+                    needs_install_flag = True
+                _progress("push", "failed: %s" % push_err[:80])
+                continue
 
             out = dict(row)
             out.update({"pushed": True, "failure_reason": "", "push_method": push_method})
@@ -658,16 +1000,28 @@ def push_branches(
             completed.append(bname)
             _progress("done", "pushed")
 
+        remaining = [r["branch_name"] for r in cand if r["branch_name"] not in completed]
+        if stop_cause is None:
+            if len(completed) == total and total > 0:
+                stop_cause = "done"
+            elif failed:
+                stop_cause = "errors"
+            else:
+                stop_cause = "done"
+
         return {
             "rows": rows,
             "completed": completed,
+            "failed": failed,
             "stopped_at": stopped_at,
             "stop_reason": stop_reason,
-            "success": stopped_at is None and len(completed) == total and total > 0,
-            "needs_install": False,
+            "success": len(completed) == total and total > 0,
+            "needs_install": needs_install_flag,
             "total": total,
             "push_method": push_method,
             "used_fallback": False,
+            "remaining": remaining,
+            "stop_cause": stop_cause,
         }
 
     primary = _attempt(github_config)
@@ -677,31 +1031,46 @@ def push_branches(
     fb = fallback_config
     primary_token = (github_config or {}).get("token", "")
     fb_token = (fb or {}).get("token", "")
+    failed_names = primary.get("failed") or []
     can_fallback = (
         fb
         and fb_token
         and fb_token != primary_token
-        and not primary.get("success")
+        and failed_names
     )
     if not can_fallback:
         return primary
 
-    fallback_result = _attempt(fb)
+    failed_rows = [
+        r for r in (validated_rows or [])
+        if r.get("branch_name") in failed_names
+    ]
+    fallback_result = _attempt(fb, candidates=failed_rows)
+    merged_rows = {r["branch_name"]: r for r in primary.get("rows", [])}
+    for r in fallback_result.get("rows", []):
+        merged_rows[r["branch_name"]] = r
+    completed = sorted(set(primary.get("completed", [])) | set(fallback_result.get("completed", [])))
+    failed = fallback_result.get("failed") or []
+    total = primary.get("total", 0)
+    fallback_result["rows"] = list(merged_rows.values())
+    fallback_result["completed"] = completed
+    fallback_result["failed"] = failed
+    fallback_result["remaining"] = [b for b in (primary.get("remaining") or []) if b not in completed]
+    fallback_result["success"] = len(completed) == total and total > 0
+    fallback_result["used_fallback"] = True
     if fallback_result.get("success"):
         login = fb.get("login") or "shared PAT"
-        fallback_result["used_fallback"] = True
         fallback_result["fallback_note"] = (
             "OAuth token could not write; pushed via shared PAT (@%s). "
             "Add **Contents: Read & write** to the GitHub App for per-user attribution."
             % login
         )
-        return fallback_result
-
-    fallback_result["used_fallback"] = True
-    fallback_result["stop_reason"] = (
-        "OAuth push failed; PAT fallback also failed: %s"
-        % (fallback_result.get("stop_reason") or primary.get("stop_reason") or "unknown error")
-    )
+        fallback_result["stop_cause"] = "done"
+    else:
+        fallback_result["stop_reason"] = (
+            "OAuth push failed for some branches; PAT fallback also failed: %s"
+            % (fallback_result.get("stop_reason") or primary.get("stop_reason") or "unknown error")
+        )
     return fallback_result
 
 

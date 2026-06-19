@@ -145,12 +145,27 @@ def local_tool_root(download_root, parts):
     return Path(download_root).joinpath(*parts)
 
 
+def _aws_credentials_configured():
+    key = os.environ.get("AWS_ACCESS_KEY_ID", "").strip()
+    secret = os.environ.get("AWS_SECRET_ACCESS_KEY", "").strip()
+    return bool(key and secret)
+
+
 def sync_run(branch, commit_sha, run_id, taxonomy_html_path="", cell_batch_id=None, dry_run=False):
     cfg = _s3_config()
     bucket = cfg["bucket"]
     search_prefix = cfg["search_prefix"]
     cell_batch_id = cell_batch_id or cfg["cell_batch_id"]
     download_root = cfg["download_root"]
+
+    if not _aws_credentials_configured():
+        return {
+            "branch": branch,
+            "status": "SKIPPED",
+            "reason": "AWS credentials not configured (set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)",
+            "commit_sha": commit_sha,
+            "run_id": run_id,
+        }
 
     if not _branch_allowed(branch):
         return {
@@ -226,6 +241,21 @@ def sync_from_taxonomy_meta(meta, dry_run=False):
         taxonomy_html_path=meta.get("html_path", ""),
         dry_run=dry_run,
     )
+
+
+def sync_from_taxonomy_meta_with_retry(meta, wait_sec=60, poll_sec=10, dry_run=False):
+    """Retry S3 sync until bundle found or wait_sec elapsed."""
+    import time
+
+    deadline = time.time() + max(int(wait_sec), 0)
+    last = None
+    while True:
+        last = sync_from_taxonomy_meta(meta, dry_run=dry_run)
+        if last.get("status") in ("OK", "DRY_RUN", "SKIPPED"):
+            return last
+        if time.time() >= deadline:
+            return last
+        time.sleep(max(int(poll_sec), 1))
 
 
 def update_manifest(manifest_path, sync_summaries):

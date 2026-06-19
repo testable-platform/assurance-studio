@@ -8,25 +8,35 @@ DEFAULT_N_FUNCTIONS = 72
 VARIANT_MAP = {"Bug": "bug", "BugFX": "bugfx", "TCC": "tcc", "CC": "cc"}
 
 
-def effective_strength(strength):
+def _raw_strength(strength):
     try:
-        s = int(strength or 0)
+        return max(0, int(strength or 0))
     except (TypeError, ValueError):
-        s = 0
-    return max(s, BASE_STRENGTH_FLOOR)
+        return 0
+
+
+def effective_strength(strength):
+    """Floor only brand-new branches (strength 0); regeneration keeps raw strength."""
+    s = _raw_strength(strength)
+    if s <= 0:
+        return BASE_STRENGTH_FLOOR
+    return s
 
 
 def scaled_n_functions(base_n, strength):
-    return min(180, base_n + effective_strength(strength) * 4)
+    s = _raw_strength(strength)
+    if s <= 0:
+        s = BASE_STRENGTH_FLOOR
+    return min(180, base_n + s * 4)
 
 
 def scaled_test_count(n_fn, branch_type, strength):
     if branch_type == "Bug":
         return 1
-    base = n_fn if branch_type != "Bug" else 1
-    if strength > 0:
-        return min(n_fn, 18 + effective_strength(strength) * 8)
-    return max(base, 16)
+    s = effective_strength(strength)
+    ratio = min(1.0, 0.55 + 0.11 * (s - BASE_STRENGTH_FLOOR))
+    target = int(round(n_fn * ratio))
+    return max(16, min(n_fn, target))
 
 
 def variant_marker(variant, idx, strength):

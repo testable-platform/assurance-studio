@@ -212,7 +212,7 @@ def _apply_branch_type_score(base_score, passed, branch_type, signals, base_reas
     detail = _signal_detail(signals, t)
 
     if branch_type == "CC":
-        score = base_score + (100.0 - base_score) * (0.05 + 0.15 * t)
+        score = base_score + (100.0 - base_score) * (0.15 + 0.70 * t)
         return (
             min(100.0, score),
             passed,
@@ -224,7 +224,7 @@ def _apply_branch_type_score(base_score, passed, branch_type, signals, base_reas
         defect_marker = bool(signals.get("defect_marker"))
         resolved = outcome in ("PASS", "WARN") and not defect_marker
         if resolved:
-            score = base_score + (100.0 - base_score) * (0.15 + 0.45 * t)
+            score = base_score + (100.0 - base_score) * (0.25 + 0.65 * t)
             return (
                 min(100.0, score),
                 passed,
@@ -242,7 +242,7 @@ def _apply_branch_type_score(base_score, passed, branch_type, signals, base_reas
     if branch_type == "TCC":
         config_effective = bool(signals.get("config_effective"))
         if config_effective:
-            score = base_score + (100.0 - base_score) * (0.25 + 0.45 * t)
+            score = base_score + (100.0 - base_score) * (0.30 + 0.65 * t)
             return (
                 min(100.0, score),
                 passed,

@@ -14,7 +14,7 @@ from lib.local_tool_runner import (
     run_local_tool_batch_isolated,
     _resolve_branch_path,
 )
-from lib.metrics import report_group_label
+from lib.metrics import classification_dir_for_branch
 from lib.registry import iter_branches
 from lib.report_schema import (
     find_s3_report_path,
@@ -23,8 +23,16 @@ from lib.report_schema import (
     make_report,
     save_report,
 )
+from lib.sa_qa import format_task_failure_detail
 from lib.s3_sync import sync_from_taxonomy_meta
-from lib.taxonomy_meta import latest_taxonomy_by_branch, load_manifest_runs
+from lib.taxonomy_meta import (
+    failing_sections,
+    latest_taxonomy_by_branch,
+    load_manifest_runs,
+    load_run_summary_from_meta,
+    load_taxonomy_gate_json,
+    resolve_branch_taxonomy_meta,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -77,14 +85,15 @@ def _report_file_usable(path):
     return True, True
 
 
-def _classification_dir_for_branch(branch_name, taxonomy_root="taxonomy_reports", registry=None):
-    from lib.metrics import infer_from_branch_name
-
-    tech, _, _, _ = infer_from_branch_name(branch_name, registry)
-    if not tech:
-        return None
-    group = report_group_label(tech, registry)
-    return Path(taxonomy_root) / group
+def _classification_dir_for_branch(
+    branch_name,
+    taxonomy_root="taxonomy_reports",
+    root=None,
+    registry=None,
+):
+    return classification_dir_for_branch(
+        branch_name, taxonomy_root, root=root, registry=registry,
+    )
 
 
 def whitebox_completion(branches, taxonomy_root="taxonomy_reports", root=None, registry=None):
@@ -121,15 +130,50 @@ def whitebox_completion(branches, taxonomy_root="taxonomy_reports", root=None, r
                     manifest_by_branch[bname] = run
 
     for bname in branches:
-        class_dir = _classification_dir_for_branch(bname, taxonomy_root, reg)
-        meta = {}
-        if class_dir and class_dir.is_dir():
-            meta = latest_taxonomy_by_branch(class_dir).get(bname, {})
+        meta, _source_dir = resolve_branch_taxonomy_meta(
+            bname, taxonomy_root, str(repo_root), reg,
+        )
 
         html_path = meta.get("html_path", "")
         has_taxonomy = bool(html_path and Path(html_path).is_file())
         run_id = meta.get("run_id") or (manifest_by_branch.get(bname) or {}).get("run_id", "")
         gate_score = (manifest_by_branch.get(bname) or {}).get("gate_score")
+        manifest_run = manifest_by_branch.get(bname) or {}
+        run_summary = load_run_summary_from_meta(meta)
+        run_status = (
+            run_summary.get("status")
+            or manifest_run.get("status")
+            or manifest_run.get("run_status")
+            or ""
+        ).lower()
+        total_tasks = run_summary.get("total_tasks") or manifest_run.get("total_tasks") or 0
+        completed_tasks = run_summary.get("completed_tasks") or manifest_run.get("completed_tasks") or 0
+        failed_tasks = run_summary.get("failed_tasks") or manifest_run.get("failed_tasks") or 0
+        task_failures = (
+            manifest_run.get("task_failures")
+            or run_summary.get("task_failures")
+            or []
+        )
+        gate_json = load_taxonomy_gate_json(meta)
+        fail_sections = failing_sections(gate_json) if gate_json else []
+
+        if run_status == "completed" and (not total_tasks or failed_tasks == 0):
+            run_health = "OK"
+            run_health_detail = "whitebox run completed"
+        elif run_status in ("failed", "partial") or failed_tasks:
+            run_health = "DEGRADED"
+            run_health_detail = "%s: %d/%d tasks, %d failed" % (
+                run_status or "unknown", completed_tasks, total_tasks, failed_tasks,
+            )
+            failure_detail = format_task_failure_detail(task_failures)
+            if failure_detail:
+                run_health_detail += " — failed: %s" % failure_detail
+        elif has_taxonomy:
+            run_health = "OK"
+            run_health_detail = "taxonomy produced (run summary unavailable)"
+        else:
+            run_health = "UNKNOWN"
+            run_health_detail = ""
 
         if bname in manifest_errors and not has_taxonomy:
             status = "ERROR"
@@ -145,7 +189,10 @@ def whitebox_completion(branches, taxonomy_root="taxonomy_reports", root=None, r
             detail = manifest_errors[bname]
         elif bname in catalog_skipped:
             status = "SKIPPED"
-            detail = "not in Testable catalog yet — re-run whitebox after catalog sync"
+            detail = (
+                "not in Testable catalog — platform branch sync required "
+                "(re-run whitebox after catalog updates)"
+            )
         else:
             status = "NOT_COMPLETED"
             detail = "whitebox not run or no taxonomy report"
@@ -158,6 +205,14 @@ def whitebox_completion(branches, taxonomy_root="taxonomy_reports", root=None, r
             "gate_score": gate_score,
             "html_path": html_path,
             "meta": meta,
+            "run_status": run_status,
+            "total_tasks": total_tasks,
+            "completed_tasks": completed_tasks,
+            "failed_tasks": failed_tasks,
+            "task_failures": task_failures,
+            "run_health": run_health,
+            "run_health_detail": run_health_detail,
+            "failing_sections": fail_sections,
         }
     return out
 
@@ -178,6 +233,7 @@ def compare_readiness(branches, root=None):
                 "local": False,
                 "sonar": False,
                 "ready": False,
+                "can_compare": False,
                 "missing": ["parse error"],
             })
             continue
@@ -202,6 +258,7 @@ def compare_readiness(branches, root=None):
             "local": local_ok,
             "sonar": sonar_ok,
             "ready": tax_ok and s3_ok and local_ok and sonar_ok,
+            "can_compare": s3_ok or local_ok,
             "missing": missing,
         })
     return rows
@@ -225,18 +282,11 @@ def _copy_taxonomy_proof(src_html, dest_dir):
     return str(dest)
 
 
-def _find_taxonomy_html(branch_name, taxonomy_root="taxonomy_reports", registry=None):
-    from lib.metrics import infer_from_branch_name
-
-    tech, metric, _, _ = infer_from_branch_name(branch_name)
-    if not tech:
-        return None, {}
-    group = report_group_label(tech, registry)
-    class_dir = Path(taxonomy_root) / group
-    by_branch = latest_taxonomy_by_branch(class_dir)
-    meta = by_branch.get(branch_name)
-    if not meta:
-        return None, {}
+def _find_taxonomy_html(branch_name, taxonomy_root="taxonomy_reports", registry=None, root=None):
+    repo_root = Path(root or ROOT)
+    meta, _source_dir = resolve_branch_taxonomy_meta(
+        branch_name, taxonomy_root, str(repo_root), registry,
+    )
     html_path = meta.get("html_path")
     if html_path and Path(html_path).is_file():
         return html_path, meta
@@ -260,7 +310,7 @@ def collect_s3_proof(
         raise ValueError("cannot parse branch: %s" % branch_name)
 
     if meta is None:
-        _, meta = _find_taxonomy_html(branch_name, taxonomy_root)
+        _, meta = _find_taxonomy_html(branch_name, taxonomy_root, root=str(repo_root))
 
     meta = meta or {}
     commit_sha = meta.get("commit_sha", "")
@@ -428,8 +478,22 @@ def collect_sonar_proof(
     return report
 
 
+def _skipped_report(branch_name, reason):
+    return {
+        "branch_name": branch_name,
+        "status": "SKIPPED",
+        "extra": {"skip_reason": reason},
+    }
+
+
+def _load_or_skip_report(path, branch_name, label):
+    if path.is_file():
+        return load_report(path)
+    return _skipped_report(branch_name, "%s report not produced" % label)
+
+
 def collect_comparison_proof(branch_name, root=None):
-    """Compare taxonomy, S3, and local standard reports for one branch."""
+    """Compare S3, local, and SonarQube reports; taxonomy is reference-only."""
     repo_root = Path(root or ROOT)
     from lib.metrics import infer_from_branch_name
 
@@ -442,33 +506,56 @@ def collect_comparison_proof(branch_name, root=None):
     s3_path = out_dir / REPORT_S3
     local_path = out_dir / REPORT_LOCAL
     sonar_path = out_dir / REPORT_SONAR
+
+    has_s3 = s3_path.is_file()
+    has_local = local_path.is_file()
+    has_tax = tax_path.is_file()
+    has_sonar = sonar_path.is_file()
+
     missing = []
-    if not tax_path.is_file():
+    if not has_tax:
         missing.append("taxonomy_report.json")
-    if not s3_path.is_file():
+    if not has_s3:
         missing.append("s3_report.json")
-    if not local_path.is_file():
+    if not has_local:
         missing.append("local_report.json")
-    if not sonar_path.is_file():
+    if not has_sonar:
         missing.append("sonar_report.json")
-    if missing:
-        comparison = {
+
+    if not has_s3 and not has_local:
+        return {
             "branch_name": branch_name,
             "verdict": "INCOMPLETE",
-            "summary": "missing report(s): %s in %s" % (", ".join(missing), out_dir),
+            "summary": "need at least S3 or local report in %s" % out_dir,
             "proof_dir": str(out_dir),
             "missing_reports": missing,
         }
-        return comparison
 
     from lib.compare import compare_four_reports
 
-    tax_report = load_report(tax_path)
-    s3_report = load_report(s3_path)
-    local_report = load_report(local_path)
-    sonar_report = load_report(sonar_path)
+    tax_report = (
+        load_report(tax_path)
+        if has_tax
+        else _skipped_report(branch_name, "taxonomy report not produced")
+    )
+    s3_report = (
+        load_report(s3_path)
+        if has_s3
+        else _skipped_report(branch_name, "S3 report not produced")
+    )
+    local_report = (
+        load_report(local_path)
+        if has_local
+        else _skipped_report(branch_name, "local report not produced")
+    )
+    sonar_report = (
+        load_report(sonar_path)
+        if has_sonar
+        else _skipped_report(branch_name, "SonarQube report not produced (Docker required)")
+    )
     comparison = compare_four_reports(tax_report, s3_report, local_report, sonar_report)
     comparison["proof_dir"] = str(out_dir)
+    comparison["missing_reports"] = missing
     out_path = out_dir / "comparison.json"
     import json
 
@@ -754,7 +841,7 @@ def collect_proofs_batch(
         if progress_callback:
             progress_callback("proofs", idx - 1, total, bname, "starting")
         row = {"branch_name": bname, "technique": tech, "metric": metric, "type": bt}
-        _, meta = _find_taxonomy_html(bname, taxonomy_root)
+        _, meta = _find_taxonomy_html(bname, taxonomy_root, root=str(repo_root))
 
         try:
             if sync_s3:

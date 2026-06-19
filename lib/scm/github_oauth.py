@@ -85,10 +85,9 @@ def build_authorization_url(
     if resolved_scopes:
         params["scope"] = " ".join(resolved_scopes)
     hint = _sanitize_github_login_hint(login_hint)
-    if hint and not account_picker:
+    if hint:
         params["login"] = hint
-    if account_picker:
-        params["prompt"] = "select_account"
+    # account_picker is ignored — GitHub Apps return 404 for prompt=select_account
     return "%s?%s" % (_GITHUB_AUTH_URL, urlencode(params))
 
 
@@ -143,3 +142,25 @@ def get_user_info(access_token):
         email=data.get("email"),
         avatar_url=data.get("avatar_url"),
     )
+
+
+def probe_authorize_url(authorization_url, timeout=15):
+    """Read-only probe of the OAuth authorize URL (does not complete OAuth)."""
+    try:
+        resp = requests.get(
+            authorization_url,
+            allow_redirects=True,
+            timeout=timeout,
+            headers={"User-Agent": "TestableAssuranceStudio/1.0"},
+        )
+        final_url = resp.url or ""
+        if "github.com/login" in final_url:
+            return True, "Redirects to GitHub login (OK — authorize URL is reachable)"
+        if resp.status_code == 404:
+            return False, (
+                "HTTP 404 — usually means redirect_uri is not registered as an App Callback URL. "
+                "Add it in GitHub App settings."
+            )
+        return True, "HTTP %s — final URL: %s" % (resp.status_code, final_url[:120])
+    except requests.RequestException as exc:
+        return False, "Request failed: %s" % exc

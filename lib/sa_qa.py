@@ -101,29 +101,86 @@ def resolve_tenant_id(client):
     return str(tenant_id)
 
 
+TRANSIENT_HTTP_CODES = frozenset([502, 503, 504, 520, 521, 522, 523, 524])
+
+
+def _is_transient_login_error(exc):
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in TRANSIENT_HTTP_CODES
+    if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError)):
+        return True
+    msg = str(exc).lower()
+    return any(
+        token in msg
+        for token in ("error code: 520", "error code: 502", "error code: 503", "error code: 504",
+                      "temporarily unavailable", "timed out", "connection reset")
+    )
+
+
 def login(identity_url, email, password):
     url = "%s/api/v1/auth/login" % identity_url.rstrip("/")
-    req = urllib.request.Request(url, method="POST")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("User-Agent", BROWSER_USER_AGENT)
-    req.add_header("Origin", os.environ.get("FRONTEND_URL", "https://qa-frontend.testable.cc"))
-    req.add_header("Referer", "%s/auth/login" % os.environ.get(
-        "FRONTEND_URL", "https://qa-frontend.testable.cc").rstrip("/"))
-    req.data = json.dumps({"identifier": email, "password": password}).encode("utf-8")
-    try:
-        resp = urllib.request.urlopen(req, timeout=60)
-    except urllib.error.HTTPError as e:
-        raise RuntimeError("Login failed: %s" % e.read().decode("utf-8", errors="replace")) from e
-    cookie = resp.headers.get("Set-Cookie", "")
-    token = None
-    for part in cookie.split(";"):
-        part = part.strip()
-        if part.startswith("session_token="):
-            token = part.split("=", 1)[1]
-            break
-    if not token:
-        raise RuntimeError("Login succeeded but session_token cookie missing")
-    return token
+    max_retries = max(1, int(os.environ.get("AUTH_LOGIN_RETRIES", "3")))
+    base_wait = max(1, int(os.environ.get("AUTH_LOGIN_RETRY_SEC", "5")))
+    last_exc = None
+
+    for attempt in range(1, max_retries + 1):
+        req = urllib.request.Request(url, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("User-Agent", BROWSER_USER_AGENT)
+        req.add_header("Origin", os.environ.get("FRONTEND_URL", "https://qa-frontend.testable.cc"))
+        req.add_header("Referer", "%s/auth/login" % os.environ.get(
+            "FRONTEND_URL", "https://qa-frontend.testable.cc").rstrip("/"))
+        req.data = json.dumps({"identifier": email, "password": password}).encode("utf-8")
+        try:
+            resp = urllib.request.urlopen(req, timeout=60)
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", errors="replace")
+            last_exc = RuntimeError("Login failed: %s" % detail)
+            if _is_transient_login_error(e) and attempt < max_retries:
+                wait = base_wait * (2 ** (attempt - 1))
+                print(
+                    "  login attempt %d/%d failed (HTTP %s) — retrying in %ds..."
+                    % (attempt, max_retries, e.code, wait),
+                    flush=True,
+                )
+                time.sleep(wait)
+                continue
+            if _is_transient_login_error(e):
+                raise RuntimeError(
+                    "Testable platform temporarily unavailable (HTTP %s) after %d attempts — try again shortly."
+                    % (e.code, max_retries)
+                ) from e
+            raise last_exc from e
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last_exc = RuntimeError("Login failed: %s" % e)
+            if attempt < max_retries:
+                wait = base_wait * (2 ** (attempt - 1))
+                print(
+                    "  login attempt %d/%d failed (%s) — retrying in %ds..."
+                    % (attempt, max_retries, e, wait),
+                    flush=True,
+                )
+                time.sleep(wait)
+                continue
+            raise RuntimeError(
+                "Testable platform temporarily unavailable after %d attempts — try again shortly."
+                % max_retries
+            ) from e
+
+        cookie = resp.headers.get("Set-Cookie", "")
+        token = None
+        for part in cookie.split(";"):
+            part = part.strip()
+            if part.startswith("session_token="):
+                token = part.split("=", 1)[1]
+                break
+        if not token:
+            raise RuntimeError("Login succeeded but session_token cookie missing")
+        return token
+
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("Login failed after %d attempts" % max_retries)
 
 
 def dev_verify(identity_url, email):
@@ -238,6 +295,296 @@ def normalize_repo_label(clone_url):
     return raw
 
 
+def ingestion_url_from_env():
+    """Resolve Testable ingestion-api base URL for SCM sync/import."""
+    explicit = (os.environ.get("INGESTION_URL") or "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    identity = (os.environ.get("IDENTITY_URL") or "").strip().rstrip("/")
+    if "qa-api" in identity:
+        return "https://qa-ingestion.testable.cc"
+    if "localhost" in identity or "127.0.0.1" in identity:
+        return "http://localhost:8001"
+    if identity:
+        return identity.replace("qa-api", "qa-ingestion")
+    return "https://qa-ingestion.testable.cc"
+
+
+def resolve_github_default_branch(repository_match, github_token=None):
+    """Return the GitHub default branch for *repository_match* (usually ``main``)."""
+    slug = normalize_repo_label(repository_match)
+    if not slug:
+        return "main"
+    token = (github_token or os.environ.get("GITHUB_TOKEN") or "").strip()
+    if token:
+        try:
+            import urllib.error
+
+            path = "/repos/%s" % slug
+            req = urllib.request.Request("https://api.github.com%s" % path)
+            req.add_header("Accept", "application/vnd.github+json")
+            req.add_header("Authorization", "Bearer %s" % token)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            default_branch = (data.get("default_branch") or "").strip()
+            if default_branch:
+                return default_branch
+        except Exception:
+            pass
+    oauth_default = (os.environ.get("GITHUB_DEFAULT_BRANCH") or "").strip()
+    if oauth_default:
+        return oauth_default
+    return "main"
+
+
+def get_repository_record(client, project_id, repository_id):
+    """Fetch a repository row from runtime-api."""
+    repos_resp = client.get_json(
+        "%s/v1/projects/%s/repositories" % (client.runtime_url, project_id)
+    )
+    repo_list = repos_resp.get("repositories") or repos_resp.get("items") or []
+    for repo in repo_list:
+        if repo.get("id") == repository_id:
+            return repo
+    return None
+
+
+def is_misseeded_repository(repo_record, github_default, required_branches):
+    """True when catalog was seeded with an analysis branch instead of the repo default."""
+    if not repo_record:
+        return False
+    seeded = (repo_record.get("default_branch") or "").strip()
+    github_default = (github_default or "main").strip()
+    if not seeded or seeded == github_default:
+        return False
+    required = list(required_branches or [])
+    if seeded in required:
+        return True
+    return False
+
+
+def list_scm_connections(client):
+    """Return active SCM connections from ingestion-api."""
+    ingestion = ingestion_url_from_env()
+    ingestion_client = PlatformClient(
+        client.identity_url, ingestion, client.views_url, client.session_token
+    )
+    try:
+        data = ingestion_client.get_json("%s/v1/scm/connections" % ingestion)
+    except Exception:
+        return []
+    connections = data.get("connections") or []
+    return [c for c in connections if (c.get("status") or "").lower() == "active"]
+
+
+def trigger_scm_sync(client, connection_id):
+    ingestion = ingestion_url_from_env()
+    ingestion_client = PlatformClient(
+        client.identity_url, ingestion, client.views_url, client.session_token
+    )
+    return ingestion_client.post_json(
+        "%s/v1/scm/connections/%s/sync" % (ingestion, connection_id),
+        {},
+    )
+
+
+def wait_for_scm_sync(client, sync_id, timeout_sec=120, poll_interval=5):
+    ingestion = ingestion_url_from_env()
+    ingestion_client = PlatformClient(
+        client.identity_url, ingestion, client.views_url, client.session_token
+    )
+    started = time.time()
+    last_status = None
+    detail = {}
+    while time.time() - started < timeout_sec:
+        detail = ingestion_client.get_json("%s/v1/scm/syncs/%s" % (ingestion, sync_id))
+        status = (detail.get("status") or "").lower()
+        if status != last_status:
+            print(
+                "  scm sync status=%s phase=%s"
+                % (status or "unknown", detail.get("phase") or "—"),
+                flush=True,
+            )
+            last_status = status
+        if status in ("completed", "partial", "failed"):
+            return detail
+        time.sleep(poll_interval)
+    detail["status"] = detail.get("status") or "timeout"
+    return detail
+
+
+def find_discovered_repository(client, connection_id, repository_match):
+    ingestion = ingestion_url_from_env()
+    ingestion_client = PlatformClient(
+        client.identity_url, ingestion, client.views_url, client.session_token
+    )
+    needle = normalize_repo_label(repository_match).lower()
+    offset = 0
+    while True:
+        url = "%s/v1/scm/connections/%s/discovered?limit=100&offset=%d" % (
+            ingestion,
+            connection_id,
+            offset,
+        )
+        data = ingestion_client.get_json(url)
+        rows = data.get("repositories") or []
+        for row in rows:
+            full_name = (row.get("full_name") or normalize_repo_label(row.get("clone_url") or "")).lower()
+            if full_name == needle:
+                return row
+        total = int(data.get("total") or 0)
+        offset += len(rows)
+        if not rows or offset >= total:
+            break
+    return None
+
+
+def import_discovered_branches(client, connection_id, discovered_repo_id, branch_names):
+    ingestion = ingestion_url_from_env()
+    ingestion_client = PlatformClient(
+        client.identity_url, ingestion, client.views_url, client.session_token
+    )
+    body = {
+        "repositories": [
+            {
+                "discovered_repo_id": discovered_repo_id,
+                "branches": list(branch_names or []),
+                "trigger_events": ["push"],
+            }
+        ]
+    }
+    return ingestion_client.post_json(
+        "%s/v1/scm/connections/%s/import" % (ingestion, connection_id),
+        body,
+    )
+
+
+def wait_for_scm_import(client, import_run_id, timeout_sec=180, poll_interval=5):
+    ingestion = ingestion_url_from_env()
+    ingestion_client = PlatformClient(
+        client.identity_url, ingestion, client.views_url, client.session_token
+    )
+    started = time.time()
+    last_status = None
+    detail = {}
+    while time.time() - started < timeout_sec:
+        detail = ingestion_client.get_json(
+            "%s/v1/scm/imports/%s" % (ingestion, import_run_id)
+        )
+        status = (detail.get("status") or "").lower()
+        if status != last_status:
+            print(
+                "  scm import status=%s imported=%s failed=%s"
+                % (
+                    status or "unknown",
+                    detail.get("total_imported"),
+                    detail.get("total_failed"),
+                ),
+                flush=True,
+            )
+            last_status = status
+        if status in ("completed", "partial", "failed"):
+            return detail
+        time.sleep(poll_interval)
+    detail["status"] = detail.get("status") or "timeout"
+    return detail
+
+
+def ensure_branches_via_scm_import(client, repository_match, required_branches):
+    """Sync SCM discovery and import selected branches into the runtime catalog."""
+    required = [b.strip() for b in (required_branches or []) if b and b.strip()]
+    if not required:
+        return False
+
+    connections = list_scm_connections(client)
+    if not connections:
+        print(
+            "  WARNING: no Testable SCM connection — link GitHub in the QA UI "
+            "(Code → Linked) for the same account as your session repo.",
+            flush=True,
+        )
+        return False
+
+    github_connections = [
+        c for c in connections if (c.get("provider") or "").lower() == "github"
+    ]
+    if not github_connections:
+        github_connections = connections
+
+    repo_owner = ""
+    if "/" in repository_match:
+        repo_owner = repository_match.split("/", 1)[0].strip().lower()
+
+    for conn in github_connections:
+        connection_id = conn.get("id")
+        if not connection_id:
+            continue
+        username = conn.get("provider_username") or conn.get("provider") or "scm"
+        if repo_owner and username.lower() != repo_owner:
+            print(
+                "  HINT: Testable SCM is connected as %r but the session repo owner is %r — "
+                "use the same GitHub account in the QA UI (Code → Linked) as on the Branches tab."
+                % (username, repo_owner),
+                flush=True,
+            )
+        print(
+            "  scm sync for connection %s (%s)..."
+            % (connection_id, username),
+            flush=True,
+        )
+        try:
+            sync_resp = trigger_scm_sync(client, connection_id)
+        except Exception as exc:
+            print("  scm sync trigger failed: %s" % exc, flush=True)
+            continue
+        sync_id = sync_resp.get("sync_id")
+        if sync_id:
+            wait_for_scm_sync(
+                client,
+                sync_id,
+                timeout_sec=int(os.environ.get("SCM_SYNC_TIMEOUT_SEC", "120")),
+            )
+
+        discovered = find_discovered_repository(client, connection_id, repository_match)
+        if not discovered:
+            continue
+
+        discovered_id = discovered.get("id")
+        discovered_names = {
+            (b.get("name") or "").strip()
+            for b in (discovered.get("branches") or [])
+            if isinstance(b, dict)
+        }
+        discovered_names.discard("")
+        import_names = [name for name in required if name in discovered_names]
+        if not import_names:
+            import_names = list(required)
+
+        print(
+            "  scm import: registering %d branch(es) for %s via discovered repo %s"
+            % (len(import_names), repository_match, discovered_id),
+            flush=True,
+        )
+        try:
+            import_resp = import_discovered_branches(
+                client, connection_id, discovered_id, import_names
+            )
+        except Exception as exc:
+            print("  scm import request failed: %s" % exc, flush=True)
+            continue
+        import_run_id = import_resp.get("import_run_id")
+        if not import_run_id:
+            continue
+        result = wait_for_scm_import(
+            client,
+            import_run_id,
+            timeout_sec=int(os.environ.get("SCM_IMPORT_TIMEOUT_SEC", "180")),
+        )
+        if (result.get("status") or "").lower() in ("completed", "partial"):
+            if int(result.get("total_imported") or 0) > 0:
+                return True
+    return False
+
 def ensure_project(client, name, clone_url, default_branch):
     projects = client.get_json("%s/v1/projects" % client.runtime_url)
     if projects.get("projects"):
@@ -252,9 +599,315 @@ def ensure_project(client, name, clone_url, default_branch):
     return client.post_json("%s/v1/projects" % client.runtime_url, body)
 
 
+def clone_url_for_repository_match(repository_match):
+    """Build a GitHub clone URL from owner/repo slug."""
+    slug = (repository_match or "").strip().rstrip("/")
+    if slug.endswith(".git"):
+        slug = slug[:-4]
+    if not slug:
+        return ""
+    if slug.startswith("http://") or slug.startswith("https://"):
+        return slug if slug.endswith(".git") else slug + ".git"
+    return "https://github.com/%s.git" % slug
+
+
+def provision_project_for_repo(client, name, clone_url, default_branch):
+    """Register a GitHub repo as a Testable project (always POST, even if other projects exist)."""
+    body = {
+        "name": name,
+        "clone_url": clone_url,
+        "branch_name": default_branch,
+        "scm_provider": "github",
+    }
+    print("  registering repo %s into Testable catalog..." % normalize_repo_label(clone_url), flush=True)
+    return client.post_json("%s/v1/projects" % client.runtime_url, body)
+
+
+def _catalog_needs_provisioning(exc):
+    msg = str(exc).lower()
+    return "no projects found" in msg or "not found" in msg
+
+
 def refresh_branches(client, repository_id):
     url = "%s/v1/repositories/%s/branches/refresh" % (client.runtime_url, repository_id)
     return client.post_json(url, {})
+
+
+def repository_matches_slug(repo, repository_match):
+    """True when a Testable repository record matches owner/repo slug."""
+    label = normalize_repo_label(repo.get("clone_url") or repo.get("url") or "").lower()
+    needle = normalize_repo_label(repository_match).lower()
+    return bool(label and needle and label == needle)
+
+
+def find_repository_candidates(client, repository_match, project_list=None):
+    """Return (project, repository) pairs matching *repository_match* across all projects."""
+    if project_list is None:
+        projects_resp = client.get_json("%s/v1/projects" % client.runtime_url)
+        project_list = projects_resp.get("projects") or []
+    candidates = []
+    for project in project_list:
+        pid = project["id"]
+        repos_resp = client.get_json(
+            "%s/v1/projects/%s/repositories" % (client.runtime_url, pid)
+        )
+        repo_list = repos_resp.get("repositories") or repos_resp.get("items") or []
+        for repo in repo_list:
+            if repository_matches_slug(repo, repository_match):
+                candidates.append((project, repo))
+    return candidates
+
+
+def list_connected_repositories(client, project_list=None):
+    """Return deduplicated repositories connected in Testable QA for this account."""
+    if project_list is None:
+        projects_resp = client.get_json("%s/v1/projects" % client.runtime_url)
+        project_list = projects_resp.get("projects") or []
+    seen = set()
+    rows = []
+    for project in project_list:
+        pid = project.get("id")
+        pname = project.get("name")
+        repos_resp = client.get_json(
+            "%s/v1/projects/%s/repositories" % (client.runtime_url, pid)
+        )
+        repo_list = repos_resp.get("repositories") or repos_resp.get("items") or []
+        for repo in repo_list:
+            label = normalize_repo_label(repo.get("clone_url") or repo.get("url") or "")
+            if not label:
+                continue
+            rid = repo.get("id") or ""
+            dedupe_key = (label.lower(), rid)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            rows.append({
+                "label": label,
+                "project_name": pname,
+                "project_id": pid,
+                "repository_id": rid,
+            })
+    rows.sort(key=lambda row: (row["label"].lower(), (row.get("project_name") or "").lower()))
+    return rows
+
+
+def rank_qa_repos_for_branches(client, connected_repos, branch_names):
+    """Rank connected QA repos by how many required branches appear in each catalog."""
+    branch_names = [b.strip() for b in (branch_names or []) if b and b.strip()]
+    ranked = []
+    for row in connected_repos or []:
+        label = row.get("label")
+        if not label:
+            continue
+        entry = dict(row)
+        try:
+            catalog = resolve_catalog(
+                client,
+                None,
+                label,
+                required_branches=branch_names,
+            )
+            ready = [name for name in branch_names if name in catalog["branches"]]
+            entry["ready_count"] = len(ready)
+            entry["ready"] = ready
+            entry["catalog_total"] = catalog.get("catalog_total") or len(catalog["branches"])
+            entry["repository_label"] = catalog.get("repository_label") or label
+        except RuntimeError:
+            entry["ready_count"] = 0
+            entry["ready"] = []
+            entry["catalog_total"] = 0
+            entry["repository_label"] = label
+        ranked.append(entry)
+    ranked.sort(
+        key=lambda row: (row.get("ready_count", 0), row.get("catalog_total", 0)),
+        reverse=True,
+    )
+    return ranked
+
+
+def fetch_repository_branches(client, repository_id, max_pages=20):
+    """Fetch branch catalog for a repository (handles paginated responses)."""
+    branch_map = {}
+    total_reported = None
+    per_page = int(os.environ.get("CATALOG_BRANCHES_PER_PAGE", "100"))
+    for page in range(1, max_pages + 1):
+        url = "%s/v1/repositories/%s/branches?page=%d&per_page=%d" % (
+            client.runtime_url,
+            repository_id,
+            page,
+            per_page,
+        )
+        resp = client.get_json(url)
+        branch_list = resp.get("branches") or resp.get("items") or []
+        if resp.get("total") is not None:
+            total_reported = int(resp.get("total"))
+        for branch in branch_list:
+            name = branch.get("name")
+            if name:
+                branch_map[name] = branch
+        if not branch_list:
+            break
+        if total_reported is not None and len(branch_map) >= total_reported:
+            break
+        if len(branch_list) < per_page and (
+            total_reported is None or len(branch_map) >= total_reported
+        ):
+            break
+    return branch_map, total_reported
+
+
+def _pick_repository_candidate(candidates, client, project_id=None, project_name=None, required_branches=None):
+    """Choose the best project/repository pair for whitebox runs."""
+    if not candidates:
+        return None
+    required = list(required_branches or [])
+
+    def _coverage(project_repo):
+        _project, repo = project_repo
+        branch_map, _total = fetch_repository_branches(client, repo["id"])
+        if not required:
+            return len(branch_map), branch_map
+        found = sum(1 for name in required if name in branch_map)
+        return found, branch_map
+
+    narrowed = list(candidates)
+    if project_id:
+        by_id = [item for item in narrowed if item[0].get("id") == project_id]
+        if by_id:
+            narrowed = by_id
+    if project_name and len(narrowed) > 1:
+        pname = project_name.strip().lower()
+        by_name = [
+            item for item in narrowed
+            if (item[0].get("name") or "").strip().lower() == pname
+        ]
+        if by_name:
+            narrowed = by_name
+
+    scored = []
+    for item in narrowed:
+        found_count, branch_map = _coverage(item)
+        scored.append((found_count, len(branch_map), item, branch_map))
+    scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    _found, _total, chosen, _branch_map = scored[0]
+    return chosen
+
+
+def catalog_branch_hints(client, repository_match, required_branches, catalog_branch_map=None, github_branch_names=None):
+    """Explain likely catalog/GitHub mismatches for Stage 2 whitebox."""
+    hints = []
+    required = list(required_branches or [])
+    catalog_branch_map = catalog_branch_map or {}
+    catalog_found = [name for name in required if name in catalog_branch_map]
+    catalog_missing = [name for name in required if name not in catalog_branch_map]
+
+    if github_branch_names is not None:
+        gh_set = set(github_branch_names)
+        gh_found = [name for name in required if name in gh_set]
+        if len(gh_found) == len(required) and catalog_missing:
+            hints.append(
+                "GitHub repo %s has all %d required branch(es), but the QA-connected repo %s only lists %d/%d in its Testable catalog — branch discovery may still be running or reconnect GitHub for that repo in Testable QA."
+                % (repository_match, len(required), repository_match, len(catalog_found), len(required))
+            )
+
+    if not catalog_missing:
+        return hints
+
+    projects_resp = client.get_json("%s/v1/projects" % client.runtime_url)
+    project_list = projects_resp.get("projects") or []
+    for project in project_list:
+        repos_resp = client.get_json(
+            "%s/v1/projects/%s/repositories" % (client.runtime_url, project["id"])
+        )
+        repo_list = repos_resp.get("repositories") or repos_resp.get("items") or []
+        for repo in repo_list:
+            label = normalize_repo_label(repo.get("clone_url") or repo.get("url") or "")
+            if repository_matches_slug(repo, repository_match):
+                continue
+            branch_map, _total = fetch_repository_branches(client, repo["id"])
+            alt_found = [name for name in required if name in branch_map]
+            if len(alt_found) >= len(required):
+                hints.append(
+                    "Required branches appear under Testable project %r / repo %s, but Stage 2 is querying QA repo %s — select %s in the **Testable QA repository** dropdown on the Whitebox tab."
+                    % (project.get("name"), label, repository_match, label)
+                )
+                return hints
+    return hints
+
+
+def resolve_catalog(client, project_id, repository_match, required_branches=None, project_name=None):
+    projects_resp = client.get_json("%s/v1/projects" % client.runtime_url)
+    project_list = projects_resp.get("projects") or []
+    if not project_list:
+        raise RuntimeError("No projects found for this user")
+
+    candidates = find_repository_candidates(client, repository_match, project_list)
+    if not candidates:
+        available = []
+        for project in project_list:
+            repos_resp = client.get_json(
+                "%s/v1/projects/%s/repositories" % (client.runtime_url, project["id"])
+            )
+            repo_list = repos_resp.get("repositories") or repos_resp.get("items") or []
+            for repo in repo_list:
+                available.append(
+                    "%s (%s)" % (
+                        normalize_repo_label(repo.get("clone_url")),
+                        project.get("name"),
+                    )
+                )
+        raise RuntimeError(
+            "Repository '%s' not found in any Testable project. Available: %s"
+            % (repository_match, available)
+        )
+
+    chosen = _pick_repository_candidate(
+        candidates,
+        client,
+        project_id=project_id,
+        project_name=project_name,
+        required_branches=required_branches,
+    )
+    project, repository = chosen
+    branch_map, catalog_total = fetch_repository_branches(client, repository["id"])
+    if catalog_total is not None and catalog_total != len(branch_map):
+        print(
+            "  WARNING: catalog reported total=%d but fetched %d branch records"
+            % (catalog_total, len(branch_map)),
+            flush=True,
+        )
+    return {
+        "project_id": project["id"],
+        "project_name": project.get("name"),
+        "repository_id": repository["id"],
+        "repository_label": normalize_repo_label(repository.get("clone_url")),
+        "default_branch": repository.get("default_branch"),
+        "branches": branch_map,
+        "catalog_total": catalog_total,
+    }
+
+
+def preview_catalog_status(client, repository_match, branch_names, project_id=None, project_name=None):
+    """Lightweight Stage 2 readiness check for UI (no branch refresh)."""
+    branch_names = [b.strip() for b in (branch_names or []) if b and b.strip()]
+    catalog = resolve_catalog(
+        client,
+        project_id,
+        repository_match,
+        required_branches=branch_names,
+        project_name=project_name,
+    )
+    ready = [name for name in branch_names if name in catalog["branches"]]
+    missing = [name for name in branch_names if name not in catalog["branches"]]
+    return {
+        "project_name": catalog.get("project_name"),
+        "project_id": catalog.get("project_id"),
+        "repository_label": catalog.get("repository_label"),
+        "repository_id": catalog.get("repository_id"),
+        "catalog_total": catalog.get("catalog_total", len(catalog["branches"])),
+        "ready": ready,
+        "missing": missing,
+    }
 
 
 def wait_for_branches(
@@ -264,92 +917,145 @@ def wait_for_branches(
     poll_interval=10,
     timeout_sec=300,
     allow_partial=False,
+    refresh_every_sec=None,
 ):
+    """Poll Testable catalog until required branches appear or timeout.
+
+    When allow_partial is True, missing branches are only accepted after the full
+    timeout elapses (not on the first branch found).
+    """
+    required_names = list(required_names or [])
+    if not required_names:
+        return {}
+
     started = time.time()
     branch_map = {}
+    last_refresh = started
+    if refresh_every_sec is None:
+        refresh_every_sec = int(os.environ.get("BRANCH_REFRESH_EVERY_SEC", "30"))
+    last_reported = -1
+
+    def _maybe_refresh():
+        nonlocal last_refresh
+        if refresh_every_sec <= 0:
+            return
+        now = time.time()
+        if now - last_refresh >= refresh_every_sec:
+            try:
+                refresh_branches(client, repository_id)
+            except Exception as exc:
+                print("  branch refresh trigger: %s" % exc, flush=True)
+            last_refresh = now
+
     while time.time() - started < timeout_sec:
+        _maybe_refresh()
         try:
-            branches_resp = client.get_json(
-                "%s/v1/repositories/%s/branches" % (client.runtime_url, repository_id))
+            branch_map, catalog_total = fetch_repository_branches(client, repository_id)
         except Exception as exc:
             print("  branch poll error: %s (retrying...)" % exc, flush=True)
             time.sleep(poll_interval)
             continue
-        branch_list = branches_resp.get("branches") or branches_resp.get("items") or []
-        branch_map = {b.get("name"): b for b in branch_list if b.get("name")}
+        found = [n for n in required_names if n in branch_map]
         missing = [n for n in required_names if n not in branch_map]
         if not missing:
+            print(
+                "  catalog sync: all %d branches ready (catalog total=%s)"
+                % (len(required_names), catalog_total if catalog_total is not None else len(branch_map)),
+                flush=True,
+            )
             return branch_map
-        if allow_partial:
-            found = [n for n in required_names if n in branch_map]
-            if found:
-                print(
-                    "  partial catalog: %d/%d branches ready (missing: %s)"
-                    % (len(found), len(required_names), missing),
-                    flush=True,
-                )
-                return branch_map
+        if len(found) != last_reported:
+            print(
+                "  catalog sync: %d/%d branches ready (catalog total=%s, missing: %s)"
+                % (
+                    len(found),
+                    len(required_names),
+                    catalog_total if catalog_total is not None else len(branch_map),
+                    missing,
+                ),
+                flush=True,
+            )
+            last_reported = len(found)
         print("  waiting for branches (missing: %s)..." % missing, flush=True)
         time.sleep(poll_interval)
+
+    found = [n for n in required_names if n in branch_map]
+    missing = [n for n in required_names if n not in branch_map]
+    elapsed = int(time.time() - started)
+    if allow_partial and found:
+        print(
+            "  partial catalog after %ss: %d/%d branches ready (missing: %s)"
+            % (elapsed, len(found), len(required_names), missing),
+            flush=True,
+        )
+    elif missing:
+        print(
+            "  catalog sync timeout (%ss): %d/%d branches ready (missing: %s)"
+            % (elapsed, len(found), len(required_names), missing),
+            flush=True,
+        )
     return branch_map
 
 
-def resolve_catalog(client, project_id, repository_match):
-    projects = client.get_json("%s/v1/projects" % client.runtime_url)
-    project_list = projects.get("projects") or []
-    if not project_list:
-        raise RuntimeError("No projects found for this user")
-    project = None
-    if project_id:
-        for p in project_list:
-            if p.get("id") == project_id:
-                project = p
-                break
-        if not project:
-            print(
-                "  WARNING: PROJECT_ID %s not found — auto-selecting from catalog"
-                % project_id,
-                flush=True,
-            )
-    if not project:
-        needle = repository_match.lower()
-        for p in project_list:
-            name = (p.get("name") or "").lower()
-            slug = (p.get("slug") or "").lower()
-            if needle.split("/")[-1] in name or needle.split("/")[-1] in slug:
-                project = p
-                break
-    if not project:
-        project = project_list[0]
-    pid = project["id"]
-    repos = client.get_json("%s/v1/projects/%s/repositories" % (client.runtime_url, pid))
-    repo_list = repos.get("repositories") or repos.get("items") or []
-    repository = None
-    needle = repository_match.lower()
-    for r in repo_list:
-        label = normalize_repo_label(r.get("clone_url") or r.get("url") or "")
-        name = (r.get("name") or "").lower()
-        if needle in label.lower() or needle in name or label.lower() == needle:
-            repository = r
-            break
-    if not repository:
-        available = [normalize_repo_label(r.get("clone_url")) for r in repo_list]
-        raise RuntimeError("Repository '%s' not found. Available: %s" % (repository_match, available))
-    rid = repository["id"]
-    branches_resp = client.get_json("%s/v1/repositories/%s/branches" % (client.runtime_url, rid))
-    branch_list = branches_resp.get("branches") or branches_resp.get("items") or []
-    branch_map = {}
-    for b in branch_list:
-        name = b.get("name")
-        if name:
-            branch_map[name] = b
-    return {
-        "project_id": pid,
-        "project_name": project.get("name"),
-        "repository_id": rid,
-        "repository_label": normalize_repo_label(repository.get("clone_url")),
-        "branches": branch_map,
-    }
+def extract_task_failures(summary):
+    """Return structured failures from a Testable run summary payload."""
+    if not summary:
+        return []
+
+    failures = []
+
+    def _add(name, status, message=""):
+        label = (name or "unknown").strip() or "unknown"
+        failures.append({
+            "name": label,
+            "status": (status or "failed").strip() or "failed",
+            "message": (message or "")[:500],
+        })
+
+    for key in ("failed_task_details", "failures", "task_failures"):
+        items = summary.get(key)
+        if not isinstance(items, list) or not items:
+            continue
+        for item in items:
+            if isinstance(item, dict):
+                _add(
+                    item.get("name") or item.get("task") or item.get("tool") or item.get("task_name"),
+                    item.get("status") or "failed",
+                    item.get("message") or item.get("error") or item.get("detail"),
+                )
+            elif isinstance(item, str) and item.strip():
+                _add(item.strip(), "failed")
+        if failures:
+            return failures
+
+    tasks = summary.get("tasks") or summary.get("task_results") or []
+    if isinstance(tasks, list):
+        for task in tasks:
+            if not isinstance(task, dict):
+                continue
+            status = (task.get("status") or "").lower()
+            if status in ("failed", "error", "partial", "timeout", "cancelled"):
+                _add(
+                    task.get("name") or task.get("task_name") or task.get("tool"),
+                    status,
+                    task.get("message") or task.get("error") or task.get("detail"),
+                )
+    return failures
+
+
+def format_task_failure_detail(task_failures, max_items=5):
+    """Compact human-readable summary of failed tasks."""
+    if not task_failures:
+        return ""
+    parts = []
+    for item in task_failures[:max_items]:
+        name = item.get("name") or "task"
+        msg = (item.get("message") or item.get("status") or "").strip()
+        parts.append("%s (%s)" % (name, msg) if msg else name)
+    text = ", ".join(parts)
+    if len(task_failures) > max_items:
+        text += " +%d more" % (len(task_failures) - max_items)
+    return text
 
 
 def is_admission_delayed(exc):
@@ -766,36 +1472,49 @@ def main_with_args(args, progress_callback=None, result_meta=None):
 
     if args.ensure_project:
         clone_url = os.environ.get("CLONE_URL", "https://github.com/%s.git" % repository_match)
-        ensure_project(client, os.environ.get("PROJECT_NAME", "Metric Evaluation SA"), clone_url, branches[0])
-
-    print("\n=== Resolve catalog ===")
-    _progress("catalog", 0, 1, "", "resolving catalog")
-    try:
-        catalog = resolve_catalog(client, project_id, repository_match)
-    except RuntimeError as exc:
-        if "No projects found" not in str(exc):
-            raise
-        clone_url = os.environ.get("CLONE_URL", "https://github.com/%s.git" % repository_match)
-        default_branch = branches[0] if branches else "main"
-        print("  no projects for this tenant — provisioning catalog project...", flush=True)
+        seed_branch = resolve_github_default_branch(repository_match)
         ensure_project(
             client,
             os.environ.get("PROJECT_NAME", "Metric Evaluation SA"),
             clone_url,
-            default_branch,
+            seed_branch,
         )
-        catalog = resolve_catalog(client, project_id, repository_match)
+
+    print("\n=== Resolve catalog ===")
+    _progress("catalog", 0, 1, "", "resolving catalog")
+    project_name = os.environ.get("PROJECT_NAME") or None
+    try:
+        catalog = resolve_catalog(
+            client,
+            project_id,
+            repository_match,
+            required_branches=branches,
+            project_name=project_name,
+        )
+    except RuntimeError:
+        print(
+            "ERROR: repository %r is not connected in the Testable QA app yet. "
+            "Connect/sync it in the QA application, then re-run Stage 2."
+            % repository_match,
+            file=sys.stderr,
+        )
+        return 1, None
+    print(
+        "  catalog snapshot: %d branch(es) indexed for this repository"
+        % len(catalog.get("branches") or {}),
+        flush=True,
+    )
     if args.refresh_branches:
         print("  refreshing branch catalog...")
         try:
             refresh_branches(client, catalog["repository_id"])
         except Exception as exc:
             print("  refresh trigger: %s" % exc)
-        sync_timeout = int(os.environ.get("PARTIAL_BRANCH_SYNC_SEC", "60"))
-        if args.allow_partial_branches:
-            sync_timeout = min(sync_timeout, int(os.environ.get("BRANCH_SYNC_TIMEOUT_SEC", "60")))
-        else:
-            sync_timeout = int(os.environ.get("BRANCH_SYNC_TIMEOUT_SEC", "300"))
+        sync_timeout = (
+            int(os.environ.get("PARTIAL_BRANCH_SYNC_SEC", "120"))
+            if args.allow_partial_branches
+            else int(os.environ.get("BRANCH_SYNC_TIMEOUT_SEC", "300"))
+        )
         catalog["branches"] = wait_for_branches(
             client,
             catalog["repository_id"],
@@ -803,51 +1522,96 @@ def main_with_args(args, progress_callback=None, result_meta=None):
             timeout_sec=sync_timeout,
             allow_partial=args.allow_partial_branches,
         )
+    github_branch_names = None
+    if prefer_github_commit:
+        try:
+            from lib.github_api import list_repo_branches
+
+            pat = os.environ.get("GITHUB_TOKEN", "").strip()
+            if pat:
+                github_branch_names = list_repo_branches(pat, repository_match)
+        except Exception:
+            github_branch_names = None
+    missing = [b for b in branches if b not in catalog["branches"]]
+    if missing:
+        for hint in catalog_branch_hints(
+            client,
+            repository_match,
+            branches,
+            catalog_branch_map=catalog["branches"],
+            github_branch_names=github_branch_names,
+        ):
+            print("  HINT: %s" % hint, flush=True)
     print("  project: %s (%s)" % (catalog.get("project_name"), catalog["project_id"]))
     print("  repository: %s (%s)" % (catalog.get("repository_label"), catalog["repository_id"]))
 
-    missing = [b for b in branches if b not in catalog["branches"]]
     catalog_skipped = list(missing)
     if result_meta is not None:
         result_meta["catalog_skipped"] = catalog_skipped
     if missing:
-        if args.allow_partial_branches:
-            print("  WARNING: skipping missing branches: %s" % missing)
-            branches = [b for b in branches if b in catalog["branches"]]
-        else:
-            print("ERROR: branches missing from catalog: %s" % missing, file=sys.stderr)
-            return 1, None
+        print("  WARNING: skipping branches not in QA catalog after wait: %s" % missing)
+        branches = [b for b in branches if b in catalog["branches"]]
     if not branches:
-        print("ERROR: no branches available", file=sys.stderr)
+        print(
+            "ERROR: none of the requested branches are in the QA catalog for %s"
+            % repository_match,
+            file=sys.stderr,
+        )
         return 1, None
     _progress("catalog", 1, 1, "", "%d branches ready" % len(branches))
     if args.dry_run:
         print("\nDry run complete.")
-        classification = os.environ.get("REPORT_CLASSIFICATION", SA_TESTING_TYPE)
-        output_dir = os.path.join(ROOT, report_output_dir(
-            os.environ.get("OUTPUT_DIR", "taxonomy_reports"), classification))
-        return 0, output_dir
+        from lib.metrics import classification_label_for_branch
+
+        dirs = {}
+        for b in list(branches) + list(catalog_skipped):
+            label = classification_label_for_branch(b)
+            dirs[label] = os.path.join(ROOT, report_output_dir(output_root, label))
+        for label, path in sorted(dirs.items()):
+            print("  %s -> %s" % (label, path))
+        if len(dirs) == 1:
+            primary_dir = next(iter(dirs.values()))
+        else:
+            primary_dir = os.path.join(ROOT, output_root)
+        return 0, primary_dir
 
     batch_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    classification = os.environ.get("REPORT_CLASSIFICATION", SA_TESTING_TYPE)
-    output_dir = os.path.join(ROOT, report_output_dir(output_root, classification))
-    ensure_dir(output_dir)
-    manifest = {
-        "batch_id": batch_id,
-        "classification": classification,
-        "tenant_id": tenant_id,
-        "repository": catalog.get("repository_label"),
-        "project_id": catalog["project_id"],
-        "repository_id": catalog["repository_id"],
-        "catalog_skipped": catalog_skipped,
-        "runs": [],
-    }
+    from lib.metrics import classification_label_for_branch
+
+    def _classification_for(branch):
+        return classification_label_for_branch(branch)
+
+    manifests = {}
+    output_dirs = {}
+
+    def _manifest_for(classification):
+        if classification not in manifests:
+            out_dir = os.path.join(ROOT, report_output_dir(output_root, classification))
+            ensure_dir(out_dir)
+            output_dirs[classification] = out_dir
+            manifests[classification] = {
+                "batch_id": batch_id,
+                "classification": classification,
+                "tenant_id": tenant_id,
+                "repository": catalog.get("repository_label"),
+                "project_id": catalog["project_id"],
+                "repository_id": catalog["repository_id"],
+                "catalog_skipped": catalog_skipped,
+                "runs": [],
+            }
+        return manifests[classification], output_dirs[classification]
+
+    # Pre-create a manifest per classification (including skipped branches) so the
+    # reader can report SKIPPED in the correct folder.
+    for _b in list(branches) + list(catalog_skipped):
+        _manifest_for(_classification_for(_b))
 
     print("\n=== Sequential branch runs ===")
     total_branches = len(branches)
     for idx, branch_name in enumerate(branches, start=1):
         print("\n[%d/%d] %s" % (idx, total_branches, branch_name))
         _progress("whitebox", idx - 1, total_branches, branch_name, "starting")
+        manifest, output_dir = _manifest_for(_classification_for(branch_name))
         branch = catalog["branches"][branch_name]
         branch_id = branch.get("id") or branch.get("branch_id")
         if idx > 1 and branch_delay_sec > 0:
@@ -865,17 +1629,55 @@ def main_with_args(args, progress_callback=None, result_meta=None):
             run_id = run_resp["run_id"]
             summary = wait_for_whitebox_run(
                 client, run_id, tenant_id, poll_interval, poll_timeout, require_run_completed)
+            task_failures = extract_task_failures(summary)
+            if task_failures:
+                summary = dict(summary)
+                summary["task_failures"] = task_failures
             taxonomy_json = wait_for_taxonomy_ready(
                 client, run_id, tenant_id, poll_interval, taxonomy_poll_timeout)
             _, taxonomy_xml = fetch_taxonomy(client, run_id, tenant_id)
             report_folder = save_report(output_dir, branch_name, run_id, summary, taxonomy_json, taxonomy_xml)
-            manifest["runs"].append({
+            run_entry = {
                 "branch": branch_name,
                 "report_folder": report_folder,
                 "run_id": run_id,
                 "status": summary.get("status"),
+                "run_status": (summary.get("status") or "").lower(),
+                "total_tasks": summary.get("total_tasks") or 0,
+                "completed_tasks": summary.get("completed_tasks") or 0,
+                "failed_tasks": summary.get("failed_tasks") or 0,
+                "task_failures": task_failures,
                 "gate_score": extract_gate_score(taxonomy_json),
-            })
+            }
+            s3_meta = {
+                "branch": branch_name,
+                "commit_sha": commit_sha,
+                "run_id": run_id,
+                "html_path": os.path.join(output_dir, report_folder),
+            }
+            s3_wait = int(os.environ.get("S3_SYNC_WAIT_SEC", "60"))
+            s3_poll = int(os.environ.get("S3_SYNC_POLL_SEC", "10"))
+            try:
+                from lib.s3_sync import sync_from_taxonomy_meta_with_retry
+
+                s3_sync = sync_from_taxonomy_meta_with_retry(
+                    s3_meta, wait_sec=s3_wait, poll_sec=s3_poll,
+                )
+                run_entry["s3_sync"] = {
+                    "status": s3_sync.get("status"),
+                    "reason": s3_sync.get("reason") or s3_sync.get("error", ""),
+                    "local_path": s3_sync.get("local_path", ""),
+                    "s3_prefix": s3_sync.get("s3_prefix", ""),
+                }
+                print(
+                    "  s3 sync: status=%s %s"
+                    % (s3_sync.get("status"), s3_sync.get("reason") or s3_sync.get("local_path", "")),
+                    flush=True,
+                )
+            except Exception as exc:
+                run_entry["s3_sync"] = {"status": "ERROR", "reason": str(exc)}
+                print("  s3 sync failed: %s" % exc, flush=True)
+            manifest["runs"].append(run_entry)
             print("  saved to %s" % os.path.join(output_dir, report_folder))
             _progress("whitebox", idx, total_branches, branch_name, "saved run %s" % run_id)
         except Exception as exc:
@@ -885,24 +1687,33 @@ def main_with_args(args, progress_callback=None, result_meta=None):
             if not continue_on_failure:
                 break
 
-    manifest_path = os.path.join(output_dir, "manifest.json")
-    with open(manifest_path, "w", encoding="utf-8") as fh:
-        json.dump(manifest, fh, indent=2)
+    all_runs = []
+    _progress("export", 0, 1, "", "exporting taxonomy HTML")
+    for classification, cls_manifest in manifests.items():
+        cls_output_dir = output_dirs[classification]
+        manifest_path = os.path.join(cls_output_dir, "manifest.json")
+        with open(manifest_path, "w", encoding="utf-8") as fh:
+            json.dump(cls_manifest, fh, indent=2)
+        all_runs.extend(cls_manifest["runs"])
+        cls_successful = [r for r in cls_manifest["runs"] if r.get("run_id")]
+        if args.export_html and cls_successful:
+            if export_html_reports(cls_output_dir) and args.html_only:
+                prune_to_html_only(cls_output_dir)
+    _progress("export", 1, 1, "", "HTML export complete")
 
-    successful = [r for r in manifest["runs"] if r.get("run_id")]
-    if args.export_html and successful:
-        _progress("export", 0, 1, "", "exporting taxonomy HTML")
-        if export_html_reports(output_dir) and args.html_only:
-            prune_to_html_only(output_dir)
-        _progress("export", 1, 1, "", "HTML export complete")
+    if len(output_dirs) == 1:
+        primary_dir = next(iter(output_dirs.values()))
+    else:
+        primary_dir = os.path.join(ROOT, output_root)
 
+    successful = [r for r in all_runs if r.get("run_id")]
     print("\n=== Done ===")
-    print("Reports: %s" % output_dir)
+    print("Reports: %s" % primary_dir)
     _progress("done", total_branches, total_branches, "", "%d/%d runs saved" % (len(successful), total_branches))
     if not successful:
-        return 1, output_dir
-    failed = [r for r in manifest["runs"] if r.get("error")]
-    return (1 if failed else 0), output_dir
+        return 1, primary_dir
+    failed = [r for r in all_runs if r.get("error")]
+    return (1 if failed else 0), primary_dir
 
 
 if __name__ == "__main__":

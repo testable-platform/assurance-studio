@@ -29,6 +29,23 @@ class _LiveLog(io.StringIO):
         return len(s)
 
 
+class _MultiRedirect(object):
+    def __init__(self, *contexts):
+        self._contexts = contexts
+
+    def __enter__(self):
+        for ctx in self._contexts:
+            ctx.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        exc = None
+        for ctx in reversed(self._contexts):
+            if ctx.__exit__(*args):
+                exc = True
+        return exc
+
+
 class RunPanel(object):
     """Context manager: st.status + progress + live log."""
 
@@ -84,6 +101,13 @@ class RunPanel(object):
 
     def stdout_redirect(self):
         return contextlib.redirect_stdout(self._log_stream)
+
+    def io_redirect(self):
+        """Capture stdout and stderr into the live log panel."""
+        return _MultiRedirect(
+            contextlib.redirect_stdout(self._log_stream),
+            contextlib.redirect_stderr(self._log_stream),
+        )
 
     @property
     def log_lines(self):

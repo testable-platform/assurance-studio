@@ -215,13 +215,45 @@ def github_app_install_url():
     return "https://github.com/apps/%s/installations/new" % app_slug
 
 
+def github_app_permissions_url():
+    """GitHub App settings page for repository permissions."""
+    app_slug = _configured_app_slug()
+    return "https://github.com/settings/apps/%s/permissions" % app_slug
+
+
+def github_app_contents_write_help(slug):
+    """Actionable message when the GitHub App lacks Contents write on a repo."""
+    app_slug = _configured_app_slug()
+    return (
+        "GitHub App **%s** lacks **Contents: Read & write** for **%s**. "
+        "Open [App permissions](%s), set **Repository permissions → Contents → "
+        "Read and write**, save, then [re-install the app](%s) on this repository "
+        "and click **Connect GitHub** again on the Branches tab."
+        % (app_slug, slug, github_app_permissions_url(), github_app_install_url())
+    )
+
+
+def _integration_permission_error(body):
+    return "not accessible by integration" in (body or "").lower()
+
+
+def _write_access_error_message(body, repo_slug, token=None):
+    """Map GitHub write failures to the correct PAT vs App guidance."""
+    slug = normalize_repo_slug(repo_slug)
+    if _integration_permission_error(body):
+        if _token_kind(token or "") == "github-app-user":
+            return github_app_contents_write_help(slug)
+        return "HTTP 403: Resource not accessible by integration"
+    if "not accessible" in (body or "").lower() and slug:
+        if _token_kind(token or "") == "github-app-user":
+            return github_app_contents_write_help(slug)
+        return _pat_write_help(slug)
+    return (body or "")[:500]
+
+
 def github_app_install_help(slug):
     """Actionable message when the GitHub App lacks repo access."""
-    return (
-        "GitHub App is not installed on **%s** or lacks **Contents: Read & write**. "
-        "Install the app and select this repository: %s"
-        % (slug, github_app_install_url())
-    )
+    return github_app_contents_write_help(slug)
 
 
 def _configured_app_slug():
@@ -321,6 +353,9 @@ def check_app_repo_access(token, repo_slug):
     api_ok, api_detail = probe_api_write(token, slug)
     if api_ok:
         return True, False, "GitHub App has read/write access to %s" % slug
+
+    if is_app_context:
+        return False, True, github_app_contents_write_help(slug)
 
     lowered = (api_detail or "").lower()
     needs_install = (

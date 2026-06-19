@@ -159,6 +159,26 @@ def create_oauth_state(app_user, login_hint=None, repo_slug=""):
     return state
 
 
+def peek_oauth_state(state):
+    """Read OAuth state without consuming (identity recovery on redirect)."""
+    if not (state or "").strip():
+        return None
+    ensure_db()
+    with _connect() as conn:
+        _init_db(conn)
+        row = conn.execute(
+            "SELECT state, app_user, repo_slug, login_hint, created_at FROM scm_oauth_state WHERE state = ?",
+            (state.strip(),),
+        ).fetchone()
+        if not row:
+            return None
+        return OAuthStateSession(
+            app_user=row["app_user"],
+            repo_slug=row["repo_slug"],
+            login_hint=row["login_hint"],
+        )
+
+
 def consume_oauth_state(state):
     """Retrieve and delete OAuth state (single-use). Raises ValueError if invalid/expired."""
     if not (state or "").strip():

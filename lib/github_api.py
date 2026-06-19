@@ -14,7 +14,11 @@ import zipfile
 
 from lib.github_auth import (
     _pat_write_help,
+    _token_kind,
+    _write_access_error_message,
     authenticated_remote_url,
+    github_app_contents_write_help,
+    github_app_install_help,
     normalize_repo_slug,
 )
 from lib.github_auth import _api_request as _auth_api_request
@@ -40,6 +44,7 @@ def _format_push_error(detail, repo_slug, login=None, token=None):
 
     permission_error = (
         "not accessible" in lowered
+        or "not accessible by integration" in lowered
         or "authentication failed" in lowered
         or "invalid credentials" in lowered
         or "permission to" in lowered
@@ -47,9 +52,10 @@ def _format_push_error(detail, repo_slug, login=None, token=None):
         or "403" in lowered
         or "write access" in lowered
         or "404" in lowered
+        or "contents: read & write" in lowered
     )
     if permission_error and _token_kind(token or "") == "github-app-user":
-        return github_app_install_help(slug)
+        return github_app_contents_write_help(slug) if slug else github_app_install_help(slug or "")
     if permission_error:
         return _pat_write_help(slug, login)
     return detail[:500] if detail else "git push failed"
@@ -162,7 +168,7 @@ def probe_api_write(token, repo_slug):
         )
         return True, "Git Data API blob write OK"
     except urllib.error.HTTPError as exc:
-        return False, _api_error_detail(exc, slug)
+        return False, _api_error_detail(exc, slug, token=token)
     except Exception as exc:
         return False, str(exc)
 
@@ -240,16 +246,14 @@ def _api_download(token, path):
         return resp.read()
 
 
-def _api_error_detail(exc, repo_slug=None):
+def _api_error_detail(exc, repo_slug=None, token=None):
     try:
         body = exc.read().decode("utf-8", "replace")
     except Exception:
         return "HTTP %s" % exc.code
     if not body:
         return "HTTP %s" % exc.code
-    if "not accessible" in body.lower() and repo_slug:
-        return _pat_write_help(normalize_repo_slug(repo_slug))
-    return body[:500]
+    return _write_access_error_message(body, repo_slug, token=token)
 
 
 def create_branch_via_api(token, repo_slug, branch, files, base="main", message=None):
@@ -324,7 +328,7 @@ def create_branch_via_api(token, repo_slug, branch, files, base="main", message=
             )
         except urllib.error.HTTPError as exc:
             if exc.code != 422:
-                return None, "create ref failed: %s" % _api_error_detail(exc, slug)
+                return None, "create ref failed: %s" % _api_error_detail(exc, slug, token=token)
             _api_request(
                 token,
                 "%s/git/refs/heads/%s" % (api_base, branch),
@@ -334,7 +338,7 @@ def create_branch_via_api(token, repo_slug, branch, files, base="main", message=
 
         return commit_sha, None
     except urllib.error.HTTPError as exc:
-        return None, "GitHub API error: %s" % _api_error_detail(exc, slug)
+        return None, "GitHub API error: %s" % _api_error_detail(exc, slug, token=token)
     except Exception as exc:
         return None, str(exc)
 

@@ -230,14 +230,65 @@ def _statuses_compatible(*statuses):
     return all(s in warn_set for s in normalized)
 
 
+def _taxonomy_vs_s3(tax_status, s3_status):
+    """Reference cross-check: does taxonomy status agree with S3? (not part of verdict)."""
+    if tax_status == "SKIPPED" or s3_status == "SKIPPED":
+        return "N/A"
+    if tax_status == s3_status:
+        return "AGREE"
+    warn_set = {"PASS", "WARN"}
+    if tax_status in warn_set and s3_status in warn_set:
+        return "AGREE"
+    return "DIFFERS"
+
+
+def _pair_or_na(left_report, right_report, left_label, right_label, **kwargs):
+    left_skipped = (left_report or {}).get("status") == "SKIPPED"
+    right_skipped = (right_report or {}).get("status") == "SKIPPED"
+    if left_skipped or right_skipped:
+        return {
+            "verdict": "N/A",
+            "summary": "comparison not available (%s=%s, %s=%s)" % (
+                left_label,
+                (left_report or {}).get("status", "?"),
+                right_label,
+                (right_report or {}).get("status", "?"),
+            ),
+            "field_diffs": [],
+            "metric_diffs": [],
+        }
+    return compare_reports_pair(left_report, right_report, left_label, right_label, **kwargs)
+
+
+def _verdict_from_pairs(*pair_results):
+    """Combine verdicts from s3_vs_local and local_vs_sonar (ignore N/A pairs)."""
+    verdicts = [
+        p.get("verdict")
+        for p in pair_results
+        if p and p.get("verdict") not in (None, "N/A")
+    ]
+    if not verdicts:
+        return "INCOMPLETE"
+    if all(v == "MATCH" for v in verdicts):
+        return "MATCH"
+    if all(v in ("MATCH", "PARTIAL") for v in verdicts):
+        return "PARTIAL"
+    return "MISMATCH"
+
+
 def compare_four_reports(taxonomy_report, s3_report, local_report, sonar_report):
-    """Compare taxonomy, S3, local, and SonarQube standard reports."""
-    s3_local = compare_reports(s3_report, local_report)
-    local_sonar = compare_reports_pair(
+    """Compare S3, local, and SonarQube reports; taxonomy is reference-only."""
+    s3_local = (
+        _pair_or_na(s3_report, local_report, "s3", "local")
+        if (s3_report or {}).get("status") == "SKIPPED" or (local_report or {}).get("status") == "SKIPPED"
+        else compare_reports(s3_report, local_report)
+    )
+
+    local_sonar = _pair_or_na(
         local_report,
         sonar_report,
-        left_label="local",
-        right_label="sonar",
+        "local",
+        "sonar",
         require_tool_match=False,
         shared_metrics_only=True,
     )
@@ -247,37 +298,34 @@ def compare_four_reports(taxonomy_report, s3_report, local_report, sonar_report)
     local_status = (local_report or {}).get("status", "SKIPPED")
     sonar_status = (sonar_report or {}).get("status", "SKIPPED")
 
-    all_status_match = _statuses_compatible(
-        tax_status, s3_status, local_status, sonar_status
-    )
-    tool_pair_match = (
-        local_sonar["verdict"] == "MATCH"
-        and s3_local["verdict"] in ("MATCH", "PARTIAL")
-    )
-
-    if all_status_match and local_sonar["verdict"] == "MATCH":
-        verdict = "MATCH"
-    elif all_status_match or tool_pair_match:
-        verdict = "PARTIAL"
-    else:
-        verdict = "MISMATCH"
+    verdict = _verdict_from_pairs(s3_local, local_sonar)
+    taxonomy_vs_s3 = _taxonomy_vs_s3(tax_status, s3_status)
 
     summary_parts = [
-        "taxonomy=%s s3=%s local=%s sonar=%s" % (
-            tax_status, s3_status, local_status, sonar_status),
+        "verdict from S3/local/sonar (taxonomy is reference only)",
+        "taxonomy(ref)=%s taxonomy_vs_s3=%s" % (tax_status, taxonomy_vs_s3),
+        "s3=%s local=%s sonar=%s" % (s3_status, local_status, sonar_status),
         "local_vs_sonar: %s" % local_sonar.get("summary", ""),
         "s3_vs_local: %s" % s3_local.get("summary", ""),
     ]
+    if verdict == "INCOMPLETE":
+        if local_status not in ("SKIPPED", "") and s3_status == "SKIPPED" and sonar_status == "SKIPPED":
+            verdict = "PARTIAL"
+            summary_parts.insert(0, "local report only — S3 and SonarQube not available for pairing")
+        elif s3_status not in ("SKIPPED", "") and local_status == "SKIPPED" and sonar_status == "SKIPPED":
+            verdict = "PARTIAL"
+            summary_parts.insert(0, "S3 report only — local and SonarQube not available for pairing")
 
     return {
         "schema_version": SCHEMA_VERSION,
         "branch_name": (
-            sonar_report.get("branch_name")
-            or local_report.get("branch_name")
-            or s3_report.get("branch_name", "")
+            (local_report or {}).get("branch_name")
+            or (s3_report or {}).get("branch_name")
+            or (sonar_report or {}).get("branch_name", "")
         ),
         "verdict": verdict,
         "taxonomy_status": tax_status,
+        "taxonomy_vs_s3": taxonomy_vs_s3,
         "s3_status": s3_status,
         "local_status": local_status,
         "sonar_status": sonar_status,

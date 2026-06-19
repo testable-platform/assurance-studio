@@ -36,6 +36,7 @@ class ConnectCompleteResult:
     access_ok: bool = True
     needs_install: bool = False
     access_detail: str = ""
+    app_identity: str = ""
 
 
 class GitHubConnectionService:
@@ -93,8 +94,9 @@ class GitHubConnectionService:
                 provider_user_id="",
                 username="unknown",
             )
+        identity = (user_info.username or "").strip() or app_user
         connection_id = upsert_connection(
-            app_user,
+            identity,
             provider="github",
             repo_slug="",
             provider_user_id=user_info.provider_user_id,
@@ -115,6 +117,7 @@ class GitHubConnectionService:
             access_ok=True,
             needs_install=False,
             access_detail="",
+            app_identity=identity,
         )
 
     def discover_repositories(self, app_user):

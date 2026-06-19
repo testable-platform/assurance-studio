@@ -162,6 +162,32 @@ def report_group_label(technique_code, registry=None):
     return technique_by_code(technique_code, registry)["report_group_label"]
 
 
+def classification_label_for_branch(branch_name, registry=None):
+    """Report group label (taxonomy classification dir name) for a branch."""
+    default = os.environ.get("REPORT_CLASSIFICATION", "Structural Analysis")
+    try:
+        tech, _, _, _ = infer_from_branch_name(branch_name, registry)
+        if tech:
+            return report_group_label(tech, registry)
+    except Exception:
+        pass
+    return default
+
+
+def classification_dir_for_branch(
+    branch_name,
+    taxonomy_root="taxonomy_reports",
+    root=None,
+    registry=None,
+):
+    """Absolute path to taxonomy_reports/<technique group>/ for a branch."""
+    from pathlib import Path
+
+    repo_root = Path(root) if root else Path(__file__).resolve().parents[1]
+    label = classification_label_for_branch(branch_name, registry)
+    return repo_root / taxonomy_root / label
+
+
 def _branch_display_fields(parsed, folder_name, path, registry=None):
     """Resolve human-readable technique/metric labels and v2 branch name."""
     reg = registry or load_registry()

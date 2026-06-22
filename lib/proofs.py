@@ -349,7 +349,7 @@ def compare_readiness(branches, root=None):
         if not tax_ok:
             missing.append("taxonomy (Page 2)" + (" — file missing" if not has_tax else " — SKIPPED/ERROR"))
         if not s3_ok:
-            missing.append("S3 (Page 2)" + (" — file missing" if not has_s3 else " — SKIPPED/ERROR"))
+            missing.append("S3 (Compare)" + (" — file missing" if not has_s3 else " — SKIPPED/ERROR"))
         if not local_ok:
             missing.append("local (Page 3)" + (" — file missing" if not has_local else " — SKIPPED/ERROR"))
         if not sonar_ok:
@@ -447,6 +447,41 @@ def _save_taxonomy_proof(meta, out_dir, tech, metric, branch_name, branch_type, 
     return tax_report
 
 
+def collect_taxonomy_proof(
+    branch_name,
+    meta=None,
+    taxonomy_root="taxonomy_reports",
+    root=None,
+    manifest_run=None,
+):
+    """Write taxonomy_report.json (and HTML copy) without fetching S3."""
+    repo_root = Path(root or ROOT)
+    from lib.metrics import infer_from_branch_name
+
+    tech, metric, branch_type, version = infer_from_branch_name(branch_name)
+    if not tech:
+        raise ValueError("cannot parse branch: %s" % branch_name)
+
+    if meta is None:
+        _, meta = _find_taxonomy_html(branch_name, taxonomy_root, root=str(repo_root))
+
+    meta = enrich_taxonomy_meta(meta or {}, manifest_run=manifest_run, branch_name=branch_name)
+    meta.setdefault("branch", branch_name)
+
+    out_dir = proof_dir(repo_root, tech, branch_name)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    tax_report = _save_taxonomy_proof(meta, out_dir, tech, metric, branch_name, branch_type, version)
+    tax_json = out_dir / "taxonomy_report.json"
+    tax_html = out_dir / "taxonomy.html"
+    return {
+        "report": tax_report,
+        "taxonomy_json": str(tax_json) if tax_json.is_file() else "",
+        "taxonomy_html": str(tax_html) if tax_html.is_file() else "",
+        "proof_dir": str(out_dir),
+    }
+
+
 def collect_s3_proof(
     branch_name,
     meta=None,
@@ -458,6 +493,7 @@ def collect_s3_proof(
     expects_s3=None,
     s3_wait_sec=None,
     s3_poll_sec=None,
+    skip_taxonomy=False,
 ):
     """Sync S3 bundle (if needed) and write standard s3_report.json."""
     repo_root = Path(root or ROOT)
@@ -478,7 +514,8 @@ def collect_s3_proof(
     out_dir = proof_dir(repo_root, tech, branch_name)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    _save_taxonomy_proof(meta, out_dir, tech, metric, branch_name, branch_type, version)
+    if not skip_taxonomy:
+        _save_taxonomy_proof(meta, out_dir, tech, metric, branch_name, branch_type, version)
 
     if expects_s3 is None:
         expects_s3 = metric_expects_s3_artifacts(branch_name)

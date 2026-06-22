@@ -70,15 +70,13 @@ from lib.proofs import (  # noqa: E402
     collect_local_batch,
     collect_s3_proof,
     collect_sonar_batch,
+    collect_taxonomy_proof,
     compare_readiness,
     format_branch_issues,
     load_proof_bundle,
     whitebox_completion,
 )
-from lib.report_sync_service import start as start_report_sync  # noqa: E402
-from lib.report_sync_service import status as report_sync_status  # noqa: E402
 from lib.report_sync_service import stop as stop_report_sync  # noqa: E402
-from lib.report_sync_service import trigger_now as trigger_report_sync  # noqa: E402
 from lib.s3_sync import s3_live_check  # noqa: E402
 from lib.whitebox_history import branch_run_history, split_completed_pending  # noqa: E402
 from lib.registry import load_registry  # noqa: E402
@@ -96,6 +94,16 @@ st.set_page_config(
     page_icon=str(LOGO),
     layout="wide",
     initial_sidebar_state="expanded",
+)
+
+st.markdown(
+    """
+    <style>
+      [data-testid="stToolbar"], [data-testid="stStatusWidget"],
+      #MainMenu, [data-testid="stDecoration"], footer {display: none !important;}
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 
@@ -152,17 +160,24 @@ def _report_path(bundle, report_key, filename):
     return ""
 
 
-def _report_download(col, label, path, download_name, key):
+def _report_download(col, label, path, download_name, key, mime="application/json"):
     if path and Path(path).is_file():
         col.download_button(
             label,
             data=Path(path).read_bytes(),
             file_name=download_name,
-            mime="application/json",
+            mime=mime,
             key=key,
         )
     else:
         col.caption("pending")
+
+
+def _reload_s3_credentials_silent(env_file=None):
+    """Refresh AWS keys from .env.local without UI interaction."""
+    env_path = env_file or str(ROOT / ".env.local")
+    load_env(env_path, override=True)
+    return reload_s3_credentials(env_path, root=str(ROOT))
 
 
 def _diff_rows(diffs):
@@ -392,7 +407,10 @@ def _whitebox_result_row(bname, info, proof_row=None):
     completed = info.get("completed_tasks") or 0
     failed = info.get("failed_tasks") or 0
     tasks = "%d/%d" % (completed, total) if total else "—"
-    issues = proof_row.get("issues") or format_branch_issues(info, proof_row.get("s3_report_obj"))
+    issues = proof_row.get("issues") or format_branch_issues(info)
+    s3_val = proof_row.get("s3_report", "—")
+    if s3_val in ("deferred", "—"):
+        s3_val = "Compare"
     return {
         "branch": bname,
         "whitebox": info.get("status", "NOT_COMPLETED"),
@@ -401,7 +419,7 @@ def _whitebox_result_row(bname, info, proof_row=None):
         "failed": failed if total else "—",
         "run_health": info.get("run_health", "—"),
         "taxonomy": proof_row.get("taxonomy_report", "—"),
-        "s3": proof_row.get("s3_report", "—"),
+        "s3": s3_val,
         "issues": "; ".join(issues) if issues else "—",
         "detail": proof_row.get("taxonomy_detail") or proof_row.get("s3_detail") or info.get("run_health_detail") or info.get("detail", ""),
     }
@@ -1726,38 +1744,6 @@ def _sidebar_filters():
     c2.metric("S3", "OK" if s3_ok else ("expired" if audit.get("s3_ready") else "—"))
     c3.metric("GitHub", "OK" if _github_creds_ready() else "—")
 
-    if audit.get("s3_ready") and not s3_ok:
-        st.sidebar.caption(audit.get("s3_live_reason") or "S3 credentials rejected by AWS.")
-        if st.sidebar.button("Reload credentials from .env.local", key="reload_env_creds"):
-            env_path = str(ROOT / ".env.local")
-            load_env(env_path, override=True)
-            n = reload_s3_credentials(env_path, root=str(ROOT))
-            st.session_state.pop("_s3_live_check_ts", None)
-            st.session_state.pop("_s3_live_ok", None)
-            st.sidebar.success("Reloaded %d S3/AWS key(s) from .env.local" % n)
-            st.rerun()
-
-    if qa_ok:
-        sync_user = _app_user_email(audit)
-        start_report_sync(sync_user, root=str(ROOT), scope_branches=summary["branches"])
-        sync_st = report_sync_status(sync_user)
-        if sync_st.get("running"):
-            last_ts = sync_st.get("last_tick_ts") or 0.0
-            if last_ts:
-                ago = max(0, int(time.time() - last_ts))
-                sync_line = "Auto-sync: on — last pull %ds ago, %d synced" % (
-                    ago, sync_st.get("synced_count", 0),
-                )
-            else:
-                sync_line = "Auto-sync: starting… (%d pending)" % sync_st.get("pending_count", 0)
-            st.sidebar.caption(sync_line)
-            if sync_st.get("last_error"):
-                st.sidebar.caption("Sync note: %s" % sync_st["last_error"][:120])
-            if st.sidebar.button("Sync S3 reports now", key="sidebar_sync_s3_now"):
-                trigger_report_sync(sync_user)
-                st.sidebar.success("Sync triggered.")
-                st.rerun()
-
     return {
         "techniques": techniques,
         "metrics": metrics,
@@ -2784,6 +2770,7 @@ def _render_whitebox_qa_login(env_file, show_header=True, switch_mode=False):
         else:
             ok, msg = _apply_qa_login(env_file, email, qa_password)
             if ok:
+                st.session_state["main_pipeline_tab"] = "Whitebox"
                 st.rerun()
             else:
                 st.error(msg)
@@ -3474,7 +3461,7 @@ def _tab_whitebox(filters):
             wb_after = whitebox_completion(wb_run_targets, root=str(ROOT))
             st.session_state["last_whitebox_detail"] = wb_after
             proof_rows = []
-            panel.progress("proofs", 0, len(wb_run_targets), "", "collecting taxonomy + S3 proofs")
+            panel.progress("proofs", 0, len(wb_run_targets), "", "collecting taxonomy reports")
             for idx, bname in enumerate(wb_run_targets, 1):
                 info = wb_after.get(bname, {})
                 row = {
@@ -3489,41 +3476,33 @@ def _tab_whitebox(filters):
                     "run_health": info.get("run_health", "—"),
                     "detail": info.get("detail", ""),
                     "taxonomy_detail": info.get("detail", "") if info.get("status") != "COMPLETED" else "",
-                    "s3_detail": "—",
+                    "s3_detail": "Download in Compare",
                     "failing_sections": info.get("failing_sections") or [],
                     "issues": format_branch_issues(info),
+                    "taxonomy_json": "",
+                    "taxonomy_html": "",
                 }
-                s3_report = None
                 if info.get("status") == "COMPLETED":
                     try:
                         with panel.stdout_redirect():
-                            s3_report = collect_s3_proof(
+                            tax_proof = collect_taxonomy_proof(
                                 bname,
                                 meta=info.get("meta"),
                                 root=str(ROOT),
                                 manifest_run=info.get("manifest_run"),
-                                expects_s3=info.get("expects_s3"),
                             )
                         row["taxonomy_report"] = "yes"
-                        row["s3_report"] = s3_report.get("status", "?")
-                        row["s3_report_obj"] = s3_report
+                        row["s3_report"] = "deferred"
                         row["taxonomy_detail"] = "taxonomy report collected"
-                        if s3_report.get("status") == "N/A":
-                            row["s3_detail"] = _skip_detail(s3_report)
-                        elif s3_report.get("status") in ("SKIPPED", "AUTH"):
-                            row["s3_detail"] = _skip_detail(s3_report)
-                        else:
-                            row["s3_detail"] = s3_report.get("raw_summary", "")
+                        row["taxonomy_json"] = tax_proof.get("taxonomy_json", "")
+                        row["taxonomy_html"] = tax_proof.get("taxonomy_html", "")
                     except Exception as exc:
                         row["taxonomy_report"] = "error"
-                        row["s3_report"] = "ERROR"
-                        row["s3_detail"] = str(exc)
-                        row["issues"] = format_branch_issues(info) + ["S3 proof collection failed: %s" % exc]
+                        row["s3_report"] = "deferred"
+                        row["issues"] = format_branch_issues(info) + ["Taxonomy collection failed: %s" % exc]
                 else:
                     row["taxonomy_report"] = "—"
-                    row["s3_report"] = "—"
-                if s3_report:
-                    row["issues"] = format_branch_issues(info, s3_report)
+                    row["s3_report"] = "deferred"
                 proof_rows.append(row)
                 panel.progress("proofs", idx, len(wb_run_targets), bname, row["whitebox"])
 
@@ -3534,6 +3513,29 @@ def _tab_whitebox(filters):
                 [_whitebox_result_row(r["branch"], wb_after.get(r["branch"], {}), r) for r in proof_rows],
                 width="stretch",
             )
+            downloadable = [r for r in proof_rows if r.get("taxonomy_json") or r.get("taxonomy_html")]
+            if downloadable:
+                st.subheader("Download taxonomy reports")
+                for r in downloadable:
+                    safe = r["branch"].replace("/", "_")
+                    st.markdown("**%s**" % r["branch"])
+                    d1, d2 = st.columns(2)
+                    _report_download(
+                        d1,
+                        "Download taxonomy JSON",
+                        r.get("taxonomy_json"),
+                        "%s_taxonomy.json" % safe,
+                        _streamlit_key("dl_wb_tax_json", r["branch"]),
+                    )
+                    if r.get("taxonomy_html"):
+                        _report_download(
+                            d2,
+                            "Download taxonomy HTML",
+                            r.get("taxonomy_html"),
+                            "%s_taxonomy.html" % safe,
+                            _streamlit_key("dl_wb_tax_html", r["branch"]),
+                            mime="text/html",
+                        )
             for r in proof_rows:
                 branch_issues = r.get("issues") or []
                 if branch_issues:
@@ -3993,12 +3995,24 @@ def _tab_comparison(filters):
         width="stretch",
         disabled=not can_compare_any,
     ):
+        env_file = str(ROOT / ".env.local")
         with RunPanel("Comparison") as panel:
             results = []
             comparable = [r["branch_name"] for r in readiness if r.get("can_compare")]
             for idx, bname in enumerate(comparable, 1):
                 panel.progress("compare", idx - 1, len(comparable), bname, "")
                 try:
+                    wb_info = wb.get(bname, {})
+                    _reload_s3_credentials_silent(env_file)
+                    if not (load_proof_bundle(bname, root=str(ROOT)) or {}).get("s3_report"):
+                        collect_s3_proof(
+                            bname,
+                            meta=wb_info.get("meta"),
+                            root=str(ROOT),
+                            manifest_run=wb_info.get("manifest_run"),
+                            expects_s3=wb_info.get("expects_s3"),
+                            skip_taxonomy=True,
+                        )
                     results.append(collect_comparison_proof(bname, root=str(ROOT)))
                 except Exception as exc:
                     results.append({
@@ -4016,30 +4030,71 @@ def _tab_comparison(filters):
         st.toast("Comparison done", icon="✅")
 
     st.subheader("Reports & comparison")
-    h1, h2, h3, h4 = st.columns([4, 2, 2, 2])
+    h1, h2, h3, h4, h5 = st.columns([3, 2, 2, 2, 2])
     h1.markdown("**Branch**")
-    h2.markdown("**S3 report**")
-    h3.markdown("**Local report**")
-    h4.markdown("**SonarQube**")
+    h2.markdown("**Taxonomy**")
+    h3.markdown("**S3 report**")
+    h4.markdown("**Local report**")
+    h5.markdown("**SonarQube**")
 
     readiness_by = {row["branch_name"]: row for row in readiness}
+    env_file = str(ROOT / ".env.local")
     for bname in completed:
         bundle = load_proof_bundle(bname, root=str(ROOT)) or {}
         row = readiness_by.get(bname, {})
-        c1, c2, c3, c4 = st.columns([4, 2, 2, 2])
+        c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
         with c1:
             st.write(bname)
         safe = bname.replace("/", "_")
+        tax_path = _report_path(bundle, "taxonomy_report", "taxonomy_report.json")
+        tax_html_path = bundle.get("taxonomy_html") or ""
+        if not tax_html_path and tax_path:
+            html_candidate = Path(tax_path).parent / "taxonomy.html"
+            if html_candidate.is_file():
+                tax_html_path = str(html_candidate)
         _report_download(
             c2,
-            "Download S3",
-            _report_path(bundle, "s3_report", "s3_report.json"),
-            "%s_s3.json" % safe,
-            _streamlit_key("dl_s3", bname),
+            "Download JSON",
+            tax_path,
+            "%s_taxonomy.json" % safe,
+            _streamlit_key("dl_tax_json", bname),
         )
-        with c3:
+        if tax_html_path:
+            _report_download(
+                c2,
+                "Download HTML",
+                tax_html_path,
+                "%s_taxonomy.html" % safe,
+                _streamlit_key("dl_tax_html", bname),
+                mime="text/html",
+            )
+        s3_path = _report_path(bundle, "s3_report", "s3_report.json")
+        if s3_path and Path(s3_path).is_file():
             _report_download(
                 c3,
+                "Download S3",
+                s3_path,
+                "%s_s3.json" % safe,
+                _streamlit_key("dl_s3", bname),
+            )
+        elif c3.button("Fetch S3", key=_streamlit_key("fetch_s3", bname)):
+            wb_info = wb.get(bname, {})
+            try:
+                _reload_s3_credentials_silent(env_file)
+                collect_s3_proof(
+                    bname,
+                    meta=wb_info.get("meta"),
+                    root=str(ROOT),
+                    manifest_run=wb_info.get("manifest_run"),
+                    expects_s3=wb_info.get("expects_s3"),
+                    skip_taxonomy=True,
+                )
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+        with c4:
+            _report_download(
+                c4,
                 "Download local",
                 _report_path(bundle, "local_report", "local_report.json"),
                 "%s_local.json" % safe,
@@ -4052,14 +4107,14 @@ def _tab_comparison(filters):
         sonar_path = _report_path(bundle, "sonar_report", "sonar_report.json")
         if sonar_path and Path(sonar_path).is_file():
             _report_download(
-                c4,
+                c5,
                 "Download SonarQube",
                 sonar_path,
                 "%s_sonar.json" % safe,
                 _streamlit_key("dl_sonar", bname),
             )
         else:
-            c4.caption("not run / Docker required")
+            c5.caption("not run / Docker required")
 
         comparison = _load_branch_comparison(bname, bundle, row)
         with st.expander("Compare — %s" % bname, expanded=False):
@@ -4073,9 +4128,6 @@ def _tab_comparison(filters):
                     mime="application/json",
                     key=_streamlit_key("dl_cmp", bname),
                 )
-        tax_path = _report_path(bundle, "taxonomy_report", "taxonomy_report.json")
-        if tax_path and Path(tax_path).is_file():
-            st.caption("Taxonomy reference: `%s`" % tax_path)
 
         raw_reports = [
             ("Local", bundle.get("local_report")),
@@ -4131,10 +4183,6 @@ def _tab_comparison(filters):
 def main():
     load_env(str(ROOT / ".env.local"))
     _handle_oauth_callback()
-    if st.session_state.get("qa_login_ok"):
-        _bind_app_user(st.session_state.get("qa_email_saved", ""))
-    elif st.session_state.get("_bound_app_user"):
-        _bind_app_user(st.session_state.get("_bound_app_user", ""))
     _sync_github_session_from_db()
     _sync_repo_artifacts()
     if st.session_state.get("repo_switch_notice"):

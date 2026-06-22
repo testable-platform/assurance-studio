@@ -235,21 +235,23 @@ def run_local_tool_report(
     run_id=None,
     install=True,
     require_real_tool=False,
+    branch_name=None,
 ):
     """Execute local tool for one branch and return a standard report dict."""
     from lib.tool_assert import tool_assert_branch
 
-    folder = os.path.basename(os.path.normpath(branch_path))
+    folder = branch_name or os.path.basename(os.path.normpath(branch_path))
     from lib.metrics import parse_branch_name
 
     parsed = parse_branch_name(folder)
-    if not parsed:
+    identity_supplied = all([technique_code, metric_code, branch_type, version])
+    if not parsed and not identity_supplied:
         raise ValueError("unparseable branch folder: %s" % folder)
 
-    technique_code = (technique_code or parsed["tech"]).upper()
-    metric_code = (metric_code or parsed["metric"]).upper()
-    branch_type = branch_type or parsed["type"]
-    version = version or parsed["version"]
+    technique_code = (technique_code or (parsed or {}).get("tech") or "").upper()
+    metric_code = (metric_code or (parsed or {}).get("metric") or "").upper()
+    branch_type = branch_type or (parsed or {}).get("type") or ""
+    version = version or (parsed or {}).get("version") or "2.6"
 
     lang = normalize_language(language or branch_language(branch_path))
 
@@ -286,6 +288,7 @@ def run_local_tool_report(
         branch_type,
         lang,
         require_real_tool=require_real_tool,
+        branch_name=folder,
     )
     report = from_tool_assert_result(
         assert_result,
@@ -397,6 +400,7 @@ def _run_worker_for_branch(
     run_id,
     language="python",
     require_real_tool=True,
+    branch_name=None,
 ):
     """Launch venv worker subprocess; return (report_dict, worker_log)."""
     cmd = [
@@ -416,6 +420,8 @@ def _run_worker_for_branch(
         "--language",
         normalize_language(language or branch_language(branch_path)),
     ]
+    if branch_name:
+        cmd.extend(["--branch-name", branch_name])
     if require_real_tool:
         cmd.append("--require-real-tool")
     if commit_sha:
@@ -633,6 +639,7 @@ def run_local_tool_batch_isolated(
                                 run_id_by_branch.get(bname, ""),
                                 language=branch_lang,
                                 require_real_tool=True,
+                                branch_name=bname,
                             )
                         extra = dict(report.get("extra") or {})
                         extra["install_msg"] = install_msg

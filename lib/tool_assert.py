@@ -1555,17 +1555,19 @@ def tool_assert_branch(
     branch_type=None,
     language="python",
     require_real_tool=False,
+    branch_name=None,
 ):
     """Run tool assert for one branch directory. Returns result dict."""
-    folder = os.path.basename(os.path.normpath(root))
+    folder = branch_name or os.path.basename(os.path.normpath(root))
     from lib.metrics import parse_branch_name
 
     parsed = parse_branch_name(folder)
-    if not parsed:
+    identity_supplied = bool(technique_code and metric_code and branch_type)
+    if not parsed and not identity_supplied:
         return _skipped_result(folder, "unparseable branch name")
-    technique_code = (technique_code or parsed["tech"]).upper()
-    metric_code = (metric_code or parsed["metric"]).upper()
-    branch_type = branch_type or parsed["type"]
+    technique_code = (technique_code or (parsed or {}).get("tech") or "").upper()
+    metric_code = (metric_code or (parsed or {}).get("metric") or "").upper()
+    branch_type = branch_type or (parsed or {}).get("type") or ""
     lang = (language or "python").strip().lower()
 
     if not os.path.isdir(root):

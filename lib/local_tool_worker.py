@@ -25,6 +25,7 @@ def main():
     p.add_argument("--language", default="")
     p.add_argument("--commit-sha", default="")
     p.add_argument("--run-id", default="")
+    p.add_argument("--branch-name", default="", help="Real branch name when branch-path is a temp dir")
     p.add_argument(
         "--require-real-tool",
         action="store_true",
@@ -49,6 +50,7 @@ def main():
         run_id=args.run_id or None,
         install=False,
         require_real_tool=args.require_real_tool,
+        branch_name=(args.branch_name or "").strip() or None,
     )
     print(REPORT_START)
     print(json.dumps(report))

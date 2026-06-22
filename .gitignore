@@ -19,7 +19,8 @@ boot_test.*
 wb_restart.*
 commands.txt
 tools/node_modules/
-.streamlit/
+.streamlit/*
+!.streamlit/config.toml
 docs/01-high-level-design.md
 docs/02-functional-guide.md
 docs/03-process-workflows.md

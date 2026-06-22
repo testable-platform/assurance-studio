@@ -1,0 +1,27 @@
+---
+description: Forbid the agent from committing or pushing; CI/CD owns deploys
+alwaysApply: true
+---
+
+# Source Control Guardrail
+
+CI/CD is wired up for this repo. The agent edits files only; a human owns version control and deploys.
+
+## Never run (without an explicit, in-message human instruction naming the exact action)
+
+- `git commit` (including `--amend`)
+- `git push` (any remote/branch, never `--force`)
+- `git merge`, `git rebase`, `git reset --hard`, `git cherry-pick`
+- `git tag`, `git stash drop/clear`
+- Any command that writes to a remote or rewrites history
+- Editing git config, hooks, or `.github/workflows/*` to bypass the above
+
+## Allowed
+
+- Read-only git: `git status`, `git diff`, `git log`, `git show`, `git fetch`
+- Editing source files in the working tree
+
+## When a commit/push seems needed
+
+- Stop and tell the human exactly which files changed and the suggested commit message.
+- Let the human (or CI/CD) perform the commit/push.

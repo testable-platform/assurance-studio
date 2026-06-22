@@ -17,7 +17,8 @@ s3_downloads/
 .pipeline_work/
 *.log
 tools/node_modules/
-.streamlit/
+.streamlit/*
+!.streamlit/config.toml
 scm_connections.db
 archive/
 Testabel_Assurance_Studio_Docs/

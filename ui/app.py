@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 WHITEBOX_AUTO_PREVIEW_LIMIT = 12
 LARGE_SCOPE_THRESHOLD = 48
 TABLE_PAGE_SIZE = 50
+PIPELINE_TABS = ["Branches", "Whitebox", "Local tools", "SonarQube", "Compare"]
 
 from lib.app_urls import apply_github_oauth_redirect_uri, resolve_github_oauth_redirect_uri  # noqa: E402
 from lib.branch_pipeline import (  # noqa: E402
@@ -118,6 +119,18 @@ def _app_header():
 
 
 _app_header()
+
+
+def _request_pipeline_tab(tab):
+    """Schedule a stage tab switch before the radio widget renders on the next run."""
+    if tab in PIPELINE_TABS:
+        st.session_state["_pending_pipeline_tab"] = tab
+
+
+def _apply_pending_pipeline_tab():
+    pending = st.session_state.pop("_pending_pipeline_tab", None)
+    if pending in PIPELINE_TABS:
+        st.session_state["main_pipeline_tab"] = pending
 
 
 def _skip_detail(report):
@@ -2771,7 +2784,7 @@ def _render_whitebox_qa_login(env_file, show_header=True, switch_mode=False):
         else:
             ok, msg = _apply_qa_login(env_file, email, qa_password)
             if ok:
-                st.session_state["main_pipeline_tab"] = "Whitebox"
+                _request_pipeline_tab("Whitebox")
                 st.rerun()
             else:
                 st.error(msg)
@@ -3262,7 +3275,7 @@ def _tab_whitebox(filters):
             type="primary",
             width="stretch",
         ):
-            st.session_state["main_pipeline_tab"] = "Compare"
+            _request_pipeline_tab("Compare")
             st.rerun()
     if pending_runnable:
         st.info(
@@ -4199,9 +4212,10 @@ def main():
         return
 
     filters = _sidebar_filters()
+    _apply_pending_pipeline_tab()
     tab = st.radio(
         "Pipeline stage",
-        ["Branches", "Whitebox", "Local tools", "SonarQube", "Compare"],
+        PIPELINE_TABS,
         horizontal=True,
         label_visibility="collapsed",
         key="main_pipeline_tab",

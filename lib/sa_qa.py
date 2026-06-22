@@ -165,9 +165,14 @@ def _is_transient_login_error(exc):
     )
 
 
-def login(identity_url, email, password):
+def login(identity_url, email, password, timeout=None, max_retries=None):
     url = "%s/api/v1/auth/login" % identity_url.rstrip("/")
-    max_retries = max(1, int(os.environ.get("AUTH_LOGIN_RETRIES", "3")))
+    if max_retries is None:
+        max_retries = max(1, int(os.environ.get("AUTH_LOGIN_RETRIES", "3")))
+    else:
+        max_retries = max(1, int(max_retries))
+    if timeout is None:
+        timeout = 60
     base_wait = max(1, int(os.environ.get("AUTH_LOGIN_RETRY_SEC", "5")))
     last_exc = None
 
@@ -180,7 +185,7 @@ def login(identity_url, email, password):
             "FRONTEND_URL", "https://qa-frontend.testable.cc").rstrip("/"))
         req.data = json.dumps({"identifier": email, "password": password}).encode("utf-8")
         try:
-            resp = urllib.request.urlopen(req, timeout=60)
+            resp = urllib.request.urlopen(req, timeout=timeout)
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")
             last_exc = RuntimeError("Login failed: %s" % detail)
@@ -242,7 +247,7 @@ def dev_verify(identity_url, email):
         pass
 
 
-def verify_login(env_file=None, email=None, password=None):
+def verify_login(env_file=None, email=None, password=None, interactive=False):
     """Validate Testable credentials; returns (ok, message). Never returns password."""
     env_file = env_file or os.path.join(ROOT, ".env.local")
     load_env(env_file)
@@ -260,10 +265,18 @@ def verify_login(env_file=None, email=None, password=None):
         if use_env:
             return False, "email and password required (UI or .env.local)"
         return False, "email and password required"
+    login_timeout = 15 if interactive else None
+    login_retries = 1 if interactive else None
     try:
         if "localhost" in identity_url or "127.0.0.1" in identity_url:
             dev_verify(identity_url, email)
-        token = login(identity_url, email, password)
+        token = login(
+            identity_url,
+            email,
+            password,
+            timeout=login_timeout,
+            max_retries=login_retries,
+        )
         client = PlatformClient(identity_url, runtime_url, views_url, token)
         tenant_id = resolve_tenant_id(client)
         return True, "logged in as %s (tenant %s)" % (email, tenant_id)

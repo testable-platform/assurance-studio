@@ -67,6 +67,60 @@ class LoginRetryTests(unittest.TestCase):
         self.assertIn("temporarily unavailable", str(ctx.exception).lower())
         self.assertIn("520", str(ctx.exception))
 
+    def test_interactive_login_uses_single_attempt(self):
+        calls = {"n": 0}
+
+        def fake_urlopen(req, timeout=60):
+            calls["n"] += 1
+            raise urllib.error.HTTPError(
+                req.full_url, 520, "Bad Gateway", {}, io.BytesIO(b"error code: 520")
+            )
+
+        with patch.dict("os.environ", {"AUTH_LOGIN_RETRIES": "3", "AUTH_LOGIN_RETRY_SEC": "0"}):
+            with patch("lib.sa_qa.time.sleep"):
+                with patch("lib.sa_qa.urllib.request.urlopen", side_effect=fake_urlopen):
+                    with self.assertRaises(RuntimeError):
+                        login(
+                            "https://identity.test",
+                            "user@test.com",
+                            "secret",
+                            timeout=15,
+                            max_retries=1,
+                        )
+        self.assertEqual(calls["n"], 1)
+
+
+class VerifyLoginInteractiveTests(unittest.TestCase):
+    def test_interactive_verify_login_passes_fast_fail_options(self):
+        from lib.sa_qa import verify_login
+
+        with patch("lib.sa_qa.load_env"):
+            with patch.dict(
+                "os.environ",
+                {
+                    "IDENTITY_URL": "https://identity.test",
+                    "RUNTIME_URL": "https://runtime.test",
+                    "VIEWS_URL": "https://views.test",
+                },
+                clear=False,
+            ):
+                with patch("lib.sa_qa.login", return_value="tok") as mock_login:
+                    with patch("lib.sa_qa.PlatformClient"):
+                        with patch("lib.sa_qa.resolve_tenant_id", return_value="tenant-1"):
+                            ok, msg = verify_login(
+                                email="user@test.com",
+                                password="secret",
+                                interactive=True,
+                            )
+        self.assertTrue(ok)
+        mock_login.assert_called_once_with(
+            "https://identity.test",
+            "user@test.com",
+            "secret",
+            timeout=15,
+            max_retries=1,
+        )
+
 
 class FriendlyRunErrorTests(unittest.TestCase):
     def test_transient_520_message(self):

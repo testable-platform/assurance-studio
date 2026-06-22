@@ -675,11 +675,11 @@ def _clear_qa_session_caches():
         st.session_state.pop(key, None)
 
 
-def _apply_qa_login(env_file, email, password):
+def _apply_qa_login(env_file, email, password, interactive=False):
     """Verify and persist QA credentials; invalidate caches on account switch."""
     email = (email or "").strip()
     prev = (st.session_state.get("qa_email_saved") or "").strip()
-    ok, msg = verify_login(env_file, email, password)
+    ok, msg = verify_login(env_file, email, password, interactive=interactive)
     if not ok:
         st.session_state["qa_login_ok"] = False
         st.session_state["qa_login_msg"] = msg
@@ -2782,12 +2782,15 @@ def _render_whitebox_qa_login(env_file, show_header=True, switch_mode=False):
         if not email or not qa_password:
             st.error("Enter email and password.")
         else:
-            ok, msg = _apply_qa_login(env_file, email, qa_password)
+            load_env(env_file)
+            identity = os.environ.get("IDENTITY_URL", "http://localhost:8000")
+            with st.spinner("Signing in to Testable QA..."):
+                ok, msg = _apply_qa_login(env_file, email, qa_password, interactive=True)
             if ok:
                 _request_pipeline_tab("Whitebox")
                 st.rerun()
             else:
-                st.error(msg)
+                st.error("Sign-in failed against IDENTITY_URL=%s: %s" % (identity, msg))
 
 
 def _fetch_qa_connected_repositories(env_file, branch_names=None, force_refresh=False):

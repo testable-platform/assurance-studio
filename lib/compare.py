@@ -57,6 +57,7 @@ def compare_reports_pair(
     right_label="local",
     require_tool_match=True,
     shared_metrics_only=False,
+    raw_verdict=False,
 ):
     """Return structured comparison between two standard tool reports."""
     branch = left_report.get("branch_name") or right_report.get("branch_name", "")
@@ -92,7 +93,7 @@ def compare_reports_pair(
 
     left_values = left_report.get("metric_values") or {}
     right_values = right_report.get("metric_values") or {}
-    if shared_metrics_only:
+    if shared_metrics_only or raw_verdict:
         all_keys = sorted(set(left_values) & set(right_values))
     else:
         all_keys = sorted(set(left_values) | set(right_values))
@@ -103,21 +104,35 @@ def compare_reports_pair(
             metric_diffs.append(row)
             diffs.append(row)
 
-    hard_mismatches = [d for d in diffs if not d.get("match")]
-    if not hard_mismatches:
-        verdict = "MATCH"
-    elif status_match and not metric_diffs:
-        verdict = "PARTIAL"
-    elif status_match:
-        verdict = "PARTIAL"
-    else:
-        verdict = "MISMATCH"
-
     reasons = []
-    if not status_match:
-        reasons.append("status differs: %s=%s %s=%s" % (left_label, left_status, right_label, right_status))
-    if require_tool_match and not tool_match:
-        reasons.append("tool differs: %s=%r %s=%r" % (left_label, left_tool, right_label, right_tool))
+    if raw_verdict:
+        if not metric_diffs:
+            verdict = "INCOMPLETE"
+            reasons.append("no shared raw metric values")
+        elif all(md.get("match") for md in metric_diffs):
+            verdict = "MATCH"
+        else:
+            verdict = "MISMATCH"
+        if not status_match:
+            reasons.append(
+                "derived status differs (reference): %s=%s %s=%s"
+                % (left_label, left_status, right_label, right_status)
+            )
+    else:
+        hard_mismatches = [d for d in diffs if not d.get("match")]
+        if not hard_mismatches:
+            verdict = "MATCH"
+        elif status_match and not metric_diffs:
+            verdict = "PARTIAL"
+        elif status_match:
+            verdict = "PARTIAL"
+        else:
+            verdict = "MISMATCH"
+        if not status_match:
+            reasons.append("status differs: %s=%s %s=%s" % (left_label, left_status, right_label, right_status))
+        if require_tool_match and not tool_match:
+            reasons.append("tool differs: %s=%r %s=%r" % (left_label, left_tool, right_label, right_tool))
+
     for md in metric_diffs:
         if not md.get("match"):
             reasons.append(
@@ -125,7 +140,10 @@ def compare_reports_pair(
                 % (md["field"], left_label, md.get(left_label), right_label, md.get(right_label))
             )
 
-    align_msg = "%s and %s reports align" % (left_label, right_label)
+    if raw_verdict and verdict == "MATCH":
+        align_msg = "%s and %s raw metric values align" % (left_label, right_label)
+    else:
+        align_msg = "%s and %s reports align" % (left_label, right_label)
     return {
         "schema_version": SCHEMA_VERSION,
         "branch_name": branch,
@@ -135,6 +153,7 @@ def compare_reports_pair(
         "field_diffs": diffs,
         "metric_diffs": metric_diffs,
         "summary": "; ".join(reasons) if reasons else align_msg,
+        "raw_verdict": raw_verdict,
         "%s_report_path" % left_label: left_report.get("_path", ""),
         "%s_report_path" % right_label: right_report.get("_path", ""),
     }
@@ -283,7 +302,7 @@ def _verdict_from_pairs(*pair_results):
     verdicts = [
         p.get("verdict")
         for p in pair_results
-        if p and p.get("verdict") not in (None, "N/A")
+        if p and p.get("verdict") not in (None, "N/A", "INCOMPLETE")
     ]
     if not verdicts:
         return "INCOMPLETE"
@@ -296,7 +315,14 @@ def _verdict_from_pairs(*pair_results):
 
 def compare_four_reports(taxonomy_report, s3_report, local_report, sonar_report):
     """Compare S3, local, and SonarQube reports; taxonomy is reference-only."""
-    s3_local = _pair_or_na(s3_report, local_report, "s3", "local")
+    s3_local = _pair_or_na(
+        s3_report,
+        local_report,
+        "s3",
+        "local",
+        raw_verdict=True,
+        shared_metrics_only=True,
+    )
 
     local_sonar = _pair_or_na(
         local_report,
@@ -305,6 +331,7 @@ def compare_four_reports(taxonomy_report, s3_report, local_report, sonar_report)
         "sonar",
         require_tool_match=False,
         shared_metrics_only=True,
+        raw_verdict=True,
     )
 
     tax_status = (taxonomy_report or {}).get("status", "SKIPPED")
@@ -317,7 +344,7 @@ def compare_four_reports(taxonomy_report, s3_report, local_report, sonar_report)
     taxonomy_vs_local = _taxonomy_vs_reference(tax_status, local_status)
 
     summary_parts = [
-        "verdict from S3/local/sonar (taxonomy is reference only)",
+        "verdict from raw metric values (S3/local/sonar); taxonomy is reference only",
         "taxonomy(ref)=%s taxonomy_vs_s3=%s taxonomy_vs_local=%s"
         % (tax_status, taxonomy_vs_s3, taxonomy_vs_local),
         "s3=%s local=%s sonar=%s" % (s3_status, local_status, sonar_status),

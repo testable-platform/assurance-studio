@@ -15,7 +15,7 @@ from io import BytesIO
 
 from openpyxl import load_workbook
 
-from lib.compare import compare_four_reports  # noqa: E402
+from lib.compare import compare_four_reports, compare_reports_pair  # noqa: E402
 from lib.compare_export import build_comparison_workbook  # noqa: E402
 from lib.proofs import collect_comparison_proof, whitebox_completion  # noqa: E402
 
@@ -27,6 +27,29 @@ def _report(branch, status, tool="Tool"):
         "tool_name": tool,
         "metric_values": {"score": 10.0},
     }
+
+
+class RawVerdictTests(unittest.TestCase):
+    def test_raw_verdict_matches_when_metrics_match_status_differs(self):
+        s3 = _report("B_Bug_2.6", "PASS")
+        local = _report("B_Bug_2.6", "FAIL")
+        result = compare_reports_pair(s3, local, "s3", "local", raw_verdict=True, shared_metrics_only=True)
+        self.assertEqual(result["verdict"], "MATCH")
+        self.assertFalse(result["status_match"])
+
+    def test_raw_verdict_mismatch_when_metrics_differ(self):
+        s3 = _report("B_Bug_2.6", "PASS")
+        local = dict(_report("B_Bug_2.6", "PASS"))
+        local["metric_values"] = {"score": 99.0}
+        result = compare_reports_pair(s3, local, "s3", "local", raw_verdict=True, shared_metrics_only=True)
+        self.assertEqual(result["verdict"], "MISMATCH")
+
+    def test_raw_verdict_incomplete_without_shared_metrics(self):
+        s3 = _report("B_Bug_2.6", "PASS")
+        local = dict(_report("B_Bug_2.6", "PASS"))
+        local["metric_values"] = {"other": 1}
+        result = compare_reports_pair(s3, local, "s3", "local", raw_verdict=True, shared_metrics_only=True)
+        self.assertEqual(result["verdict"], "INCOMPLETE")
 
 
 class CompareSemanticsTests(unittest.TestCase):
@@ -151,10 +174,12 @@ class CompareSemanticsTests(unittest.TestCase):
                 "field_diffs": [
                     {"field": "status", "s3": "PASS", "local": "FAIL", "match": False},
                 ],
-                "metric_diffs": [],
+                "metric_diffs": [
+                    {"field": "score", "s3": 10.0, "local": 99.0, "match": False, "delta": 89.0},
+                ],
             },
             "local_vs_sonar": {"verdict": "N/A", "field_diffs": [], "metric_diffs": []},
-            "summary": "status differs",
+            "summary": "score differs",
         }]
         data = build_comparison_workbook(results)
         wb = load_workbook(BytesIO(data))
@@ -165,7 +190,7 @@ class CompareSemanticsTests(unittest.TestCase):
         ):
             self.assertIn(col, mismatch_headers)
         mismatch_rows = list(wb["Mismatches"].iter_rows(min_row=2, values_only=True))
-        self.assertEqual(len(mismatch_rows), 1)
+        self.assertGreaterEqual(len(mismatch_rows), 1)
         status_idx = mismatch_headers.index("S3 vs Local")
         self.assertEqual(mismatch_rows[0][status_idx], "MISMATCH")
         summary_headers = [cell.value for cell in wb["Summary"][1]]
@@ -174,7 +199,7 @@ class CompareSemanticsTests(unittest.TestCase):
         self.assertIn("Local Data", summary_headers)
         detail_idx = summary_headers.index("mismatched_fields_detail")
         summary_row = list(wb["Summary"].iter_rows(min_row=2, values_only=True))[0]
-        self.assertIn("status", summary_row[detail_idx])
+        self.assertIn("score", summary_row[detail_idx])
 
 
 class LocalProofSmokeTests(unittest.TestCase):

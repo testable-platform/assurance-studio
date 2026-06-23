@@ -78,6 +78,7 @@ from lib.proofs import (  # noqa: E402
     load_proof_bundle,
     whitebox_completion,
 )
+from lib.compare import summarize_comparisons  # noqa: E402
 from lib.report_sync_service import stop as stop_report_sync  # noqa: E402
 from lib.s3_sync import s3_live_check  # noqa: E402
 from lib.whitebox_history import branch_run_history, split_completed_pending  # noqa: E402
@@ -386,8 +387,12 @@ def _render_local_report(report):
     )
     metric_values = report.get("metric_values") or {}
     if metric_values:
-        st.markdown("*Metric values*")
+        st.markdown("*Metric values (raw)*")
         st.json(metric_values)
+    tool_log = extra.get("tool_log") or extra.get("tool_stderr") or ""
+    if tool_log:
+        st.markdown("*Raw tool output*")
+        st.code(tool_log, language=None)
 
 
 def _render_raw_report(label, report):
@@ -439,21 +444,44 @@ def _whitebox_result_row(bname, info, proof_row=None):
     }
 
 
+def _render_raw_metric_comparison(comparison):
+    """Side-by-side raw metric_values from each report source."""
+    rows = []
+    local_vals = comparison.get("local_metric_values") or {}
+    s3_vals = comparison.get("s3_metric_values") or {}
+    sonar_vals = comparison.get("sonar_metric_values") or {}
+    all_keys = sorted(set(local_vals) | set(s3_vals) | set(sonar_vals))
+    if not all_keys:
+        st.caption("No raw metric values recorded for comparison.")
+        return
+    for key in all_keys:
+        rows.append({
+            "metric": key,
+            "local": local_vals.get(key, "—"),
+            "s3": s3_vals.get(key, "—"),
+            "sonar": sonar_vals.get(key, "—"),
+        })
+    st.markdown("**Raw metric values (primary comparison)**")
+    st.dataframe(rows, width="stretch")
+
+
 def _render_detailed_comparison(comparison):
     if not comparison:
         st.info("No comparison data — need at least S3 or local report.")
         return
     if comparison.get("verdict") == "INCOMPLETE":
         st.warning(comparison.get("summary", "Comparison incomplete"))
+        _render_raw_metric_comparison(comparison)
         return
     st.markdown("**Overall verdict:** `%s`" % comparison.get("verdict", "UNKNOWN"))
     if comparison.get("summary"):
         st.caption(comparison["summary"])
+    _render_raw_metric_comparison(comparison)
     tax_status = comparison.get("taxonomy_status", "—")
     tax_vs_s3 = comparison.get("taxonomy_vs_s3", "—")
     tax_vs_local = comparison.get("taxonomy_vs_local", "—")
     st.caption(
-        "Taxonomy (reference only): `%s` — agrees with S3: **%s** — agrees with local: **%s**"
+        "Taxonomy (derived reference, extracted from S3): `%s` — agrees with S3: **%s** — agrees with local: **%s**"
         % (tax_status, tax_vs_s3, tax_vs_local)
     )
     for label, key in (
@@ -464,6 +492,7 @@ def _render_detailed_comparison(comparison):
         status = comparison.get(key, "—")
         if status == "SKIPPED":
             st.caption("%s: N/A — report not produced" % label)
+    st.markdown("*Derived status (reference only — not used for verdict)*")
     st.dataframe(
         [{
             "s3": comparison.get("s3_status", "—"),
@@ -472,8 +501,8 @@ def _render_detailed_comparison(comparison):
         }],
         width="stretch",
     )
-    _render_pair_diffs("S3 vs Local", comparison.get("s3_vs_local"))
-    _render_pair_diffs("Local vs SonarQube", comparison.get("local_vs_sonar"))
+    _render_pair_diffs("S3 vs Local (raw metrics)", comparison.get("s3_vs_local"))
+    _render_pair_diffs("Local vs SonarQube (raw metrics)", comparison.get("local_vs_sonar"))
 
 
 def _load_branch_comparison(bname, bundle, readiness_row):

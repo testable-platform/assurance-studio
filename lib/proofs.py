@@ -821,6 +821,12 @@ def collect_comparison_proof(branch_name, root=None):
         comparison["s3_raw_summary"] = s3_report.get("raw_summary", "")
         comparison["s3_executed"] = s3_report.get("status") in ("PASS", "FAIL", "WARN")
         comparison["s3_real_tool"] = extra_s3.get("real_tool")
+    if has_sonar:
+        extra_sonar = sonar_report.get("extra") or {}
+        comparison["sonar_tool_name"] = sonar_report.get("tool_name", "")
+        comparison["sonar_metric_values"] = sonar_report.get("metric_values") or {}
+        comparison["sonar_raw_summary"] = sonar_report.get("raw_summary", "")
+        comparison["sonar_real_tool"] = extra_sonar.get("real_tool")
     out_path = out_dir / "comparison.json"
     import json
 

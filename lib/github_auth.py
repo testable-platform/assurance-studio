@@ -304,19 +304,28 @@ def app_repo_install_status(token, repo_slug):
         install_id = inst.get("id")
         if not install_id:
             continue
-        try:
-            repos_payload = _api_request(
-                token,
-                "/user/installations/%s/repositories?per_page=100" % install_id,
-            )
-        except urllib.error.HTTPError:
-            continue
-        except Exception:
-            continue
-        for repo in repos_payload.get("repositories") or []:
-            full_name = (repo.get("full_name") or "").strip()
-            if full_name.lower() == slug.lower():
-                return True, True, "GitHub App installed on %s" % slug
+        page = 1
+        while True:
+            try:
+                repos_payload = _api_request(
+                    token,
+                    "/user/installations/%s/repositories?per_page=100&page=%d"
+                    % (install_id, page),
+                )
+            except urllib.error.HTTPError:
+                break
+            except Exception:
+                break
+            repos = repos_payload.get("repositories") or []
+            if not repos:
+                break
+            for repo in repos:
+                full_name = (repo.get("full_name") or "").strip()
+                if full_name.lower() == slug.lower():
+                    return True, True, "GitHub App installed on %s" % slug
+            if len(repos) < 100:
+                break
+            page += 1
 
     return True, False, github_app_install_help(slug)
 
@@ -328,49 +337,46 @@ def check_app_repo_access(token, repo_slug):
         return False, False, "Repository must be owner/repo"
 
     is_app_context = _token_kind(token) == "github-app-user"
+
+    ok, msg, repo = check_repo_access(token, slug)
+    if ok:
+        from lib.github_api import probe_api_write
+
+        api_ok, api_detail = probe_api_write(token, slug)
+        if api_ok:
+            return True, False, "GitHub App has read/write access to %s" % slug
+
+        if is_app_context:
+            return False, True, github_app_contents_write_help(slug)
+
+        lowered = (api_detail or "").lower()
+        needs_install = (
+            "not accessible" in lowered
+            or "404" in lowered
+            or "403" in lowered
+            or "write access" in lowered
+        )
+        perms = (repo or {}).get("permissions") or {}
+        if not perms.get("push") and not perms.get("admin"):
+            needs_install = True
+        detail = api_detail or "GitHub App cannot write to %s" % slug
+        return False, needs_install, detail
+
     if is_app_context:
         installed, repo_in_install, install_detail = app_repo_install_status(token, slug)
         if not installed or not repo_in_install:
             return False, True, install_detail
+        return False, True, github_app_install_help(slug)
 
-    ok, msg, repo = check_repo_access(token, slug)
-    if not ok:
-        lowered = (msg or "").lower()
-        needs_install = (
-            "not found" in lowered
-            or "no access" in lowered
-            or "cannot access" in lowered
-            or "read access only" in lowered
-            or "not accessible" in lowered
-        )
-        if is_app_context and needs_install:
-            needs_install = True
-            msg = github_app_install_help(slug)
-        return False, needs_install, msg
-
-    from lib.github_api import probe_api_write
-
-    api_ok, api_detail = probe_api_write(token, slug)
-    if api_ok:
-        return True, False, "GitHub App has read/write access to %s" % slug
-
-    if is_app_context:
-        return False, True, github_app_contents_write_help(slug)
-
-    lowered = (api_detail or "").lower()
+    lowered = (msg or "").lower()
     needs_install = (
-        "not accessible" in lowered
-        or "404" in lowered
-        or "403" in lowered
-        or "write access" in lowered
+        "not found" in lowered
+        or "no access" in lowered
+        or "cannot access" in lowered
+        or "read access only" in lowered
+        or "not accessible" in lowered
     )
-    perms = (repo or {}).get("permissions") or {}
-    if not perms.get("push") and not perms.get("admin"):
-        needs_install = True
-    detail = api_detail or "GitHub App cannot write to %s" % slug
-    if needs_install and is_app_context:
-        detail = github_app_install_help(slug)
-    return False, needs_install, detail
+    return False, needs_install, msg
 
 
 def github_oauth_app_mode():

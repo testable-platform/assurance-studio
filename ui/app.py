@@ -1420,6 +1420,22 @@ def _handle_oauth_callback():
     st.query_params.clear()
 
 
+def _handle_github_install_return():
+    """Clear stale install flags when user returns from GitHub App install redirect."""
+    qp = st.query_params
+    if not (qp.get("setup_action") or qp.get("installation_id")):
+        return
+    st.session_state.pop("push_status_cache", None)
+    st.session_state["github_needs_install"] = False
+    try:
+        _recheck_github_access()
+    except Exception:
+        pass
+    for key in ("setup_action", "installation_id", "state"):
+        if key in qp:
+            del qp[key]
+
+
 def _scm_callback_view():
     """Post-OAuth callback page — mirrors reference /scm/callback."""
     data = st.session_state.get("scm_callback") or {}
@@ -4369,6 +4385,7 @@ def _main_impl():
                 pass
     apply_github_oauth_redirect_uri()
     _handle_oauth_callback()
+    _handle_github_install_return()
     _sync_github_session_from_db()
     _sync_repo_artifacts()
     if st.session_state.get("repo_switch_notice"):

@@ -3345,11 +3345,16 @@ def _tab_whitebox(filters):
     if picker_key not in st.session_state or wb_refresh:
         last = st.session_state.get("last_whitebox_branches", branches)
         st.session_state[picker_key] = [b for b in last if b in branches] or list(on_github) or list(branches)
+        st.session_state["wb_selection_cleared"] = False
     else:
         st.session_state[picker_key] = [
             b for b in st.session_state[picker_key] if b in branches
         ]
-    if branches and not st.session_state.get(picker_key):
+    if (
+        branches
+        and not st.session_state.get(picker_key)
+        and not st.session_state.get("wb_selection_cleared")
+    ):
         st.session_state[picker_key] = list(on_github) or list(branches)
 
     st.subheader("Branches to run")
@@ -3362,10 +3367,12 @@ def _tab_whitebox(filters):
             width="stretch",
         ):
             st.session_state[picker_key] = list(on_github)
+            st.session_state["wb_selection_cleared"] = False
             st.rerun()
     with sel_cols[1]:
         if st.button("Clear selection", key="wb_clear_sel", width="stretch"):
             st.session_state[picker_key] = []
+            st.session_state["wb_selection_cleared"] = True
             st.rerun()
 
     selected = st.multiselect(
@@ -3480,19 +3487,25 @@ def _tab_whitebox(filters):
     if show_run_actions:
         btn_cols = st.columns(2 if (already_completed and pending_runnable) else 1)
         with btn_cols[0]:
-            label = (
-                "Run pending (%d)" % len(pending_runnable)
-                if pending_runnable
-                else "Run whitebox batch"
-            )
+            if pending_runnable:
+                label = "Run pending (%d)" % len(pending_runnable)
+                primary_can_run = wb_can_run
+                primary_targets = list(pending_runnable)
+            else:
+                label = (
+                    "Re-run whitebox batch (%d)" % len(selected_runnable)
+                    if selected_runnable else "Run whitebox batch"
+                )
+                primary_can_run = wb_can_rerun
+                primary_targets = list(selected_runnable)
             if st.button(
                 label,
                 type="primary",
                 width="stretch",
-                disabled=not wb_can_run,
+                disabled=not primary_can_run,
                 key="wb_run_pending_btn",
             ):
-                wb_run_targets = list(pending_runnable or selected_runnable)
+                wb_run_targets = primary_targets
         if already_completed and pending_runnable and len(btn_cols) > 1:
             with btn_cols[1]:
                 if st.button(

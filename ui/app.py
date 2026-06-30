@@ -144,6 +144,17 @@ st.markdown(
       .stButton > button[data-testid*="-primary"], .stButton > button[data-testid*="-primary"] * {
         color: #FFFFFF !important;
       }
+      [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        z-index: 1000000 !important;
+      }
+      [data-testid="stSidebarCollapsedControl"] button, [data-testid="collapsedControl"] button,
+      [data-testid="stSidebarCollapsedControl"] svg, [data-testid="collapsedControl"] svg {
+        color: #1A1A1A !important;
+        fill: #1A1A1A !important;
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1764,7 +1775,7 @@ def _sidebar_filters():
     tech_opts = technique_options(registry)
     tech_codes = [c for c, _ in tech_opts]
     type_opts = branch_type_options(registry)
-    version = st.sidebar.text_input("Version", "2.6", key="sidebar_version")
+    version = "2.6"
     full_count = full_scope_branch_count(registry, version)
 
     use_all_techniques = st.sidebar.checkbox(
